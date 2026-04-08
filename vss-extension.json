@@ -3,7 +3,7 @@
   "id": "ad-ai-pr-reviewer",
   "name": "AI PR Reviewer",
   "version": "1.0.0",
-  "publisher": "YOUR_PUBLISHER_ID",
+  "publisher": "subzone",
   "targets": [
     {
       "id": "Microsoft.VisualStudio.Services"
