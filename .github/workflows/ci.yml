@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build & Type-check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: task/package-lock.json
+
+      - name: Install task dependencies
+        run: npm ci
+        working-directory: task
+
+      - name: Build (TypeScript)
+        run: npm run build
+        working-directory: task
+
+      - name: Install tfx-cli
+        run: npm install -g tfx-cli
+
+      - name: Package extension (dry-run validation)
+        run: tfx extension create --manifest-globs vss-extension.json --output-path /tmp --no-prompt
+
+      - name: Upload vsix artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-vsix
+          path: "*.vsix"
+          if-no-files-found: error

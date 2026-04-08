@@ -1,0 +1,83 @@
+name: Publish to ADO Marketplace
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'   # trigger on version tags: v1.0.0, v1.2.3, etc.
+
+jobs:
+  publish:
+    name: Package & Publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to create GitHub Release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: task/package-lock.json
+
+      - name: Parse version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"          # e.g. v1.2.3
+          VERSION="${TAG#v}"                # strip leading 'v' → 1.2.3
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+          echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
+          echo "major=$MAJOR"       >> "$GITHUB_OUTPUT"
+          echo "minor=$MINOR"       >> "$GITHUB_OUTPUT"
+          echo "patch=$PATCH"       >> "$GITHUB_OUTPUT"
+
+      - name: Stamp version into vss-extension.json and task.json
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          MAJOR="${{ steps.version.outputs.major }}"
+          MINOR="${{ steps.version.outputs.minor }}"
+          PATCH="${{ steps.version.outputs.patch }}"
+
+          # Update extension version
+          jq --arg v "$VERSION" '.version = $v' vss-extension.json > /tmp/vss.json && mv /tmp/vss.json vss-extension.json
+
+          # Update task version (ADO uses Major/Minor/Patch integers)
+          jq --argjson major "$MAJOR" --argjson minor "$MINOR" --argjson patch "$PATCH" \
+            '.version.Major = $major | .version.Minor = $minor | .version.Patch = $patch' \
+            task/task.json > /tmp/task.json && mv /tmp/task.json task/task.json
+
+      - name: Install task dependencies
+        run: npm ci
+        working-directory: task
+
+      - name: Build (TypeScript)
+        run: npm run build
+        working-directory: task
+
+      - name: Install tfx-cli
+        run: npm install -g tfx-cli
+
+      - name: Package extension
+        run: tfx extension create --manifest-globs vss-extension.json --no-prompt
+
+      - name: Locate vsix file
+        id: vsix
+        run: echo "path=$(ls *.vsix)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to ADO Marketplace
+        run: |
+          tfx extension publish \
+            --vsix "${{ steps.vsix.outputs.path }}" \
+            --token "${{ secrets.ADO_MARKETPLACE_PAT }}" \
+            --no-prompt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "v${{ steps.version.outputs.version }}"
+          generate_release_notes: true
+          files: ${{ steps.vsix.outputs.path }}
