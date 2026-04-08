@@ -32,12 +32,16 @@ jobs:
       - name: Install tfx-cli
         run: npm install -g tfx-cli
 
-      - name: Package extension (dry-run validation)
-        run: tfx extension create --manifest-globs vss-extension.json --output-path /tmp --no-prompt
+      - name: Package extension
+        run: tfx extension create --manifest-globs vss-extension.json --no-prompt
+
+      - name: Locate vsix file
+        id: vsix
+        run: echo "path=$(ls *.vsix)" >> "$GITHUB_OUTPUT"
 
       - name: Upload vsix artifact
         uses: actions/upload-artifact@v4
         with:
           name: extension-vsix
-          path: "*.vsix"
+          path: ${{ steps.vsix.outputs.path }}
           if-no-files-found: error
