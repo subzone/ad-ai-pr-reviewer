@@ -1,6 +1,6 @@
 {
   "name": "ad-ai-pr-reviewer",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Azure DevOps pipeline task to create PRs and post AI review comments on GitHub, GitLab, and Bitbucket",
   "scripts": {
     "build": "cd task && npm install && npm run build",
