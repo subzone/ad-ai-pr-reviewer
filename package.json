@@ -1,0 +1,13 @@
+{
+  "name": "ad-ai-pr-reviewer",
+  "version": "1.0.0",
+  "description": "Azure DevOps pipeline task to create PRs and post AI review comments on GitHub, GitLab, and Bitbucket",
+  "scripts": {
+    "build": "cd task && npm install && npm run build",
+    "package": "npm run build && tfx extension create --manifest-globs vss-extension.json",
+    "publish": "tfx extension publish --manifest-globs vss-extension.json"
+  },
+  "devDependencies": {
+    "tfx-cli": "^0.16.0"
+  }
+}

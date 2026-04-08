@@ -1,0 +1,7 @@
+node_modules/
+*.vsix
+*.js.map
+task/src/**/*.js
+task/node_modules/
+.env
+.DS_Store

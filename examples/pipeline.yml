@@ -1,0 +1,76 @@
+# Example Azure DevOps pipeline using the AI PR Reviewer task.
+# Add this task to any pipeline stage/job.
+
+trigger:
+  branches:
+    include:
+      - feature/*
+      - fix/*
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  # Store sensitive values as secret pipeline variables, not here.
+  TARGET_REPO: myorg/myrepo
+  TARGET_BRANCH: main
+
+stages:
+  - stage: PullRequest
+    displayName: Create and Review PR
+    jobs:
+      - job: CreatePR
+        displayName: Create PR on GitHub with AI Review
+        steps:
+          # ── Example 1: Create PR + trigger AI review automatically ──────────
+          - task: AiPrReviewer@1
+            displayName: Create PR with AI Review
+            inputs:
+              action: createPR
+              provider: github
+              accessToken: $(GITHUB_PAT)           # secret variable
+              repository: $(TARGET_REPO)
+              sourceBranch: $(Build.SourceBranchName)
+              targetBranch: $(TARGET_BRANCH)
+              prTitle: "$(Build.SourceBranchName): automated PR"
+              prDescription: |
+                Automated PR created by Azure DevOps pipeline.
+                Build: $(Build.BuildNumber)
+              enableAiReview: true
+              aiApiKey: $(ANTHROPIC_API_KEY)        # secret variable
+              aiModel: claude-sonnet-4-6
+              aiReviewContext: "Focus on security issues and breaking changes."
+              aiMaxDiffLines: 500
+
+          - script: echo "PR URL = $(PrUrl) | PR Number = $(PrNumber)"
+            displayName: Print PR info
+
+          # ── Example 2: Review an existing PR by number ───────────────────
+          - task: AiPrReviewer@1
+            displayName: AI Review Existing PR
+            condition: and(succeeded(), ne(variables['PR_NUMBER'], ''))
+            inputs:
+              action: reviewPR
+              provider: gitlab
+              accessToken: $(GITLAB_PAT)
+              repository: mygroup/myproject
+              serverUrl: https://gitlab.mycompany.com   # omit for gitlab.com
+              prNumber: $(PR_NUMBER)
+              enableAiReview: true
+              aiApiKey: $(ANTHROPIC_API_KEY)
+              aiModel: claude-opus-4-6
+              aiReviewContext: "This is a hotfix. Be concise."
+
+          # ── Example 3: Post a manual comment on a Bitbucket PR ───────────
+          - task: AiPrReviewer@1
+            displayName: Post Pipeline Status Comment
+            inputs:
+              action: commentPR
+              provider: bitbucket
+              accessToken: $(BITBUCKET_APP_PASSWORD)
+              repository: myworkspace/myrepo
+              prNumber: $(PR_NUMBER)
+              commentBody: |
+                ## Pipeline Status
+                Build **$(Build.BuildNumber)** completed successfully.
+                All tests passed. Ready for review.

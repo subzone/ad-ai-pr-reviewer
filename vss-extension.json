@@ -1,0 +1,49 @@
+{
+  "manifestVersion": 1,
+  "id": "ad-ai-pr-reviewer",
+  "name": "AI PR Reviewer",
+  "version": "1.0.0",
+  "publisher": "YOUR_PUBLISHER_ID",
+  "targets": [
+    {
+      "id": "Microsoft.VisualStudio.Services"
+    }
+  ],
+  "description": "Create pull requests and post AI-generated review comments on GitHub, GitLab, and Bitbucket from Azure DevOps pipelines.",
+  "categories": [
+    "Azure Pipelines"
+  ],
+  "tags": [
+    "pull request",
+    "AI",
+    "code review",
+    "GitHub",
+    "GitLab",
+    "Bitbucket",
+    "Claude"
+  ],
+  "icons": {
+    "default": "images/extension-icon.png"
+  },
+  "files": [
+    {
+      "path": "task"
+    },
+    {
+      "path": "images",
+      "addressable": true
+    }
+  ],
+  "contributions": [
+    {
+      "id": "AiPrReviewerTask",
+      "type": "ms.vss-distributed-task.task",
+      "targets": [
+        "ms.vss-distributed-task.tasks"
+      ],
+      "properties": {
+        "name": "task"
+      }
+    }
+  ]
+}

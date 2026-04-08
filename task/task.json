@@ -1,0 +1,231 @@
+{
+  "id": "a3f8c2d1-7b4e-4a9f-8c6d-2e1f0a4b3c5d",
+  "name": "AiPrReviewer",
+  "friendlyName": "AI PR Reviewer",
+  "description": "Create pull requests and post AI-generated review comments on GitHub, GitLab, or Bitbucket repositories.",
+  "author": "ad-ai-pr-reviewer",
+  "helpMarkDown": "See [documentation](https://github.com/subzone/ad-ai-pr-reviewer) for configuration details.",
+  "category": "Utility",
+  "visibility": ["Build", "Release"],
+  "version": {
+    "Major": 1,
+    "Minor": 0,
+    "Patch": 0
+  },
+  "instanceNameFormat": "AI PR Reviewer: $(action)",
+  "groups": [
+    {
+      "name": "source",
+      "displayName": "Source Repository",
+      "isExpanded": true
+    },
+    {
+      "name": "pr",
+      "displayName": "Pull Request",
+      "isExpanded": true
+    },
+    {
+      "name": "ai",
+      "displayName": "AI Review (Claude)",
+      "isExpanded": false
+    }
+  ],
+  "inputs": [
+    {
+      "name": "action",
+      "type": "pickList",
+      "label": "Action",
+      "defaultValue": "createPR",
+      "required": true,
+      "helpMarkDown": "Choose what the task should do.",
+      "options": {
+        "createPR": "Create Pull Request",
+        "reviewPR": "AI Review Pull Request",
+        "commentPR": "Post Comment on Pull Request"
+      }
+    },
+    {
+      "name": "provider",
+      "type": "pickList",
+      "label": "Source Repository Provider",
+      "defaultValue": "github",
+      "required": true,
+      "groupName": "source",
+      "helpMarkDown": "The version control provider hosting the repository.",
+      "options": {
+        "github": "GitHub",
+        "gitlab": "GitLab",
+        "bitbucket": "Bitbucket Cloud",
+        "bitbucket-server": "Bitbucket Server (Data Center)"
+      }
+    },
+    {
+      "name": "accessToken",
+      "type": "string",
+      "label": "Access Token",
+      "defaultValue": "",
+      "required": true,
+      "groupName": "source",
+      "helpMarkDown": "Personal Access Token (PAT) with repo/PR read+write permissions. Store this in a secret pipeline variable."
+    },
+    {
+      "name": "repository",
+      "type": "string",
+      "label": "Repository",
+      "defaultValue": "",
+      "required": true,
+      "groupName": "source",
+      "helpMarkDown": "Repository in `owner/repo` format (e.g. `myorg/myrepo`). For Bitbucket Server, use `workspace/repo`."
+    },
+    {
+      "name": "serverUrl",
+      "type": "string",
+      "label": "Server URL",
+      "defaultValue": "",
+      "required": false,
+      "groupName": "source",
+      "helpMarkDown": "Required for GitLab self-hosted or Bitbucket Server. Example: `https://gitlab.mycompany.com`. Leave empty for cloud providers.",
+      "visibleRule": "provider = gitlab || provider = bitbucket-server"
+    },
+    {
+      "name": "sourceBranch",
+      "type": "string",
+      "label": "Source Branch (head)",
+      "defaultValue": "$(Build.SourceBranchName)",
+      "required": false,
+      "groupName": "pr",
+      "helpMarkDown": "The branch containing your changes. Defaults to the current build branch.",
+      "visibleRule": "action = createPR"
+    },
+    {
+      "name": "targetBranch",
+      "type": "string",
+      "label": "Target Branch (base)",
+      "defaultValue": "main",
+      "required": false,
+      "groupName": "pr",
+      "helpMarkDown": "The branch you want to merge into.",
+      "visibleRule": "action = createPR"
+    },
+    {
+      "name": "prTitle",
+      "type": "string",
+      "label": "PR Title",
+      "defaultValue": "$(Build.SourceBranchName): automated PR",
+      "required": false,
+      "groupName": "pr",
+      "helpMarkDown": "Title for the pull request.",
+      "visibleRule": "action = createPR"
+    },
+    {
+      "name": "prDescription",
+      "type": "multiLine",
+      "label": "PR Description",
+      "defaultValue": "",
+      "required": false,
+      "groupName": "pr",
+      "helpMarkDown": "Body text for the pull request. Markdown is supported.",
+      "visibleRule": "action = createPR"
+    },
+    {
+      "name": "prNumber",
+      "type": "string",
+      "label": "Pull Request Number",
+      "defaultValue": "",
+      "required": false,
+      "groupName": "pr",
+      "helpMarkDown": "The PR/MR number to review or comment on.",
+      "visibleRule": "action = reviewPR || action = commentPR"
+    },
+    {
+      "name": "commentBody",
+      "type": "multiLine",
+      "label": "Comment Text",
+      "defaultValue": "",
+      "required": false,
+      "groupName": "pr",
+      "helpMarkDown": "Comment text to post on the PR. Markdown is supported.",
+      "visibleRule": "action = commentPR"
+    },
+    {
+      "name": "failOnExistingPR",
+      "type": "boolean",
+      "label": "Fail if PR already exists",
+      "defaultValue": "false",
+      "required": false,
+      "groupName": "pr",
+      "helpMarkDown": "If checked, the task will fail when a PR for the same branches already exists. If unchecked, it outputs the existing PR URL.",
+      "visibleRule": "action = createPR"
+    },
+    {
+      "name": "enableAiReview",
+      "type": "boolean",
+      "label": "Enable AI Review",
+      "defaultValue": "false",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "Use Claude to analyze the PR diff and post an AI-generated review comment.",
+      "visibleRule": "action = reviewPR || action = createPR"
+    },
+    {
+      "name": "aiApiKey",
+      "type": "string",
+      "label": "Anthropic API Key",
+      "defaultValue": "",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "Your Anthropic API key. Store this in a secret pipeline variable. Get one at https://console.anthropic.com.",
+      "visibleRule": "enableAiReview = true"
+    },
+    {
+      "name": "aiModel",
+      "type": "pickList",
+      "label": "Claude Model",
+      "defaultValue": "claude-sonnet-4-6",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "The Claude model to use for code review.",
+      "options": {
+        "claude-opus-4-6": "Claude Opus 4.6 (most capable)",
+        "claude-sonnet-4-6": "Claude Sonnet 4.6 (recommended)",
+        "claude-haiku-4-5-20251001": "Claude Haiku 4.5 (fastest)"
+      },
+      "visibleRule": "enableAiReview = true"
+    },
+    {
+      "name": "aiReviewContext",
+      "type": "multiLine",
+      "label": "Review Context",
+      "defaultValue": "",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "Additional instructions or context to give the AI reviewer (e.g. 'Focus on security issues', 'This is a hotfix, be concise').",
+      "visibleRule": "enableAiReview = true"
+    },
+    {
+      "name": "aiMaxDiffLines",
+      "type": "string",
+      "label": "Max Diff Lines to Review",
+      "defaultValue": "500",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "Truncate the diff sent to the AI if it exceeds this many lines. Prevents token limit issues on large PRs.",
+      "visibleRule": "enableAiReview = true"
+    }
+  ],
+  "outputVariables": [
+    {
+      "name": "PrUrl",
+      "description": "The URL of the created or found pull request."
+    },
+    {
+      "name": "PrNumber",
+      "description": "The number of the created or found pull request."
+    }
+  ],
+  "execution": {
+    "Node20_1": {
+      "target": "dist/index.js"
+    }
+  }
+}
