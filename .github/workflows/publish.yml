@@ -61,8 +61,27 @@ jobs:
       - name: Install tfx-cli
         run: npm install -g tfx-cli
 
+      - name: Verify files before packaging
+        run: |
+          echo "=== Working directory ==="
+          pwd
+          echo "=== overview.md exists? ==="
+          ls -la overview.md
+          echo "=== images/ exists? ==="
+          ls -la images/
+          echo "=== vss-extension.json content ==="
+          cat vss-extension.json
+
       - name: Package extension
-        run: tfx extension create --manifest-globs vss-extension.json --no-prompt
+        run: tfx extension create --manifest-globs vss-extension.json --no-prompt --output-path .
+
+      - name: Inspect VSIX contents
+        run: |
+          VSIX=$(ls *.vsix)
+          echo "=== VSIX file: $VSIX ==="
+          unzip -l "$VSIX" | grep -i overview || echo "overview.md NOT FOUND in VSIX!"
+          echo "=== All files in VSIX ==="
+          unzip -l "$VSIX"
 
       - name: Locate vsix file
         id: vsix
