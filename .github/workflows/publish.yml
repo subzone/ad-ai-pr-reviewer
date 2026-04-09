@@ -61,38 +61,29 @@ jobs:
       - name: Install tfx-cli
         run: npm install -g tfx-cli
 
-      - name: Verify files before packaging
+      - name: Debug - verify files exist
         run: |
-          echo "=== Working directory ==="
-          pwd
-          echo "=== overview.md exists? ==="
-          ls -la overview.md
-          echo "=== images/ exists? ==="
-          ls -la images/
-          echo "=== vss-extension.json content ==="
+          echo "=== Root directory ==="
+          ls -la
+          echo "=== overview.md ==="
+          head -3 overview.md
+          echo "=== vss-extension.json ==="
           cat vss-extension.json
 
-      - name: Package extension
-        run: tfx extension create --manifest-globs vss-extension.json --no-prompt --output-path .
-
-      - name: Inspect VSIX contents
+      - name: Publish directly to ADO Marketplace
         run: |
-          VSIX=$(ls *.vsix)
-          echo "=== VSIX file: $VSIX ==="
-          unzip -l "$VSIX" | grep -i overview || echo "overview.md NOT FOUND in VSIX!"
-          echo "=== All files in VSIX ==="
-          unzip -l "$VSIX"
+          tfx extension publish \
+            --manifest-globs vss-extension.json \
+            --root . \
+            --token "${{ secrets.ADO_MARKETPLACE_PAT }}" \
+            --no-prompt
+
+      - name: Package VSIX for GitHub Release
+        run: tfx extension create --manifest-globs vss-extension.json --root . --no-prompt
 
       - name: Locate vsix file
         id: vsix
         run: echo "path=$(ls *.vsix)" >> "$GITHUB_OUTPUT"
-
-      - name: Publish to ADO Marketplace
-        run: |
-          tfx extension publish \
-            --vsix "${{ steps.vsix.outputs.path }}" \
-            --token "${{ secrets.ADO_MARKETPLACE_PAT }}" \
-            --no-prompt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
