@@ -3,5 +3,6 @@ node_modules/
 *.js.map
 task/src/**/*.js
 task/node_modules/
+task/coverage/
 .env
 .DS_Store
