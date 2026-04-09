@@ -61,16 +61,7 @@ jobs:
       - name: Install tfx-cli
         run: npm install -g tfx-cli
 
-      - name: Debug - verify files exist
-        run: |
-          echo "=== Root directory ==="
-          ls -la
-          echo "=== overview.md ==="
-          head -3 overview.md
-          echo "=== vss-extension.json ==="
-          cat vss-extension.json
-
-      - name: Publish directly to ADO Marketplace
+      - name: Publish to ADO Marketplace
         run: |
           tfx extension publish \
             --manifest-globs vss-extension.json \

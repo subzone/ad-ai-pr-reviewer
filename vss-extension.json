@@ -38,12 +38,6 @@
     {
       "path": "images",
       "addressable": true
-    },
-    {
-      "path": "overview.md"
-    },
-    {
-      "path": "README.md"
     }
   ],
   "contributions": [
