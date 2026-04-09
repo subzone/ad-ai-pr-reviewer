@@ -4,6 +4,7 @@
   "name": "AI PR Reviewer",
   "version": "0.0.1",
   "publisher": "subzone",
+  "public": true,
   "targets": [
     {
       "id": "Microsoft.VisualStudio.Services"
