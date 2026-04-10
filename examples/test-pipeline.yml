@@ -181,9 +181,32 @@ stages:
             name: createPR
 
           - script: |
-              echo "PR URL:    $(PrUrl)"
-              echo "PR Number: $(PrNumber)"
+              PR_URL="$(PrUrl)"
+              PR_NUMBER="$(PrNumber)"
+              REPO="$(TEST_REPO)"
+              BRANCH="$(SOURCE_BRANCH)"
+
+              echo "PR URL:    $PR_URL"
+              echo "PR Number: $PR_NUMBER"
+
+              # Write summary card shown in ADO pipeline run
+              SUMMARY="$AGENT_TEMPDIRECTORY/pr-summary.md"
+              cat > "$SUMMARY" << EOF
+              ## AI PR Reviewer — Test Result
+
+              | | |
+              |---|---|
+              | **PR** | [#$PR_NUMBER — View on GitHub]($PR_URL) |
+              | **Repository** | $REPO |
+              | **Branch** | $BRANCH |
+              | **Model** | $(AI_MODEL) |
+              | **Build** | $(Build.BuildNumber) |
+              EOF
+
+              echo "##vso[build.uploadsummary]$SUMMARY"
             displayName: Print created PR info
+            env:
+              AGENT_TEMPDIRECTORY: $(Agent.TempDirectory)
 
           - script: |
               export INPUT_ACTION="reviewPR"
