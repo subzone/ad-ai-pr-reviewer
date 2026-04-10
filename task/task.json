@@ -9,8 +9,8 @@
   "visibility": ["Build", "Release"],
   "version": {
     "Major": 0,
-    "Minor": 0,
-    "Patch": 1
+    "Minor": 1,
+    "Patch": 0
   },
   "instanceNameFormat": "AI PR Reviewer: $(action)",
   "groups": [
@@ -26,7 +26,7 @@
     },
     {
       "name": "ai",
-      "displayName": "AI Review (Claude)",
+      "displayName": "AI Review",
       "isExpanded": false
     }
   ],
@@ -35,12 +35,12 @@
       "name": "action",
       "type": "pickList",
       "label": "Action",
-      "defaultValue": "createPR",
+      "defaultValue": "reviewPR",
       "required": true,
       "helpMarkDown": "Choose what the task should do.",
       "options": {
-        "createPR": "Create Pull Request",
         "reviewPR": "AI Review Pull Request",
+        "createPR": "Create Pull Request",
         "commentPR": "Post Comment on Pull Request"
       }
     },
@@ -75,7 +75,7 @@
       "defaultValue": "",
       "required": true,
       "groupName": "source",
-      "helpMarkDown": "Repository in `owner/repo` format (e.g. `myorg/myrepo`). For Bitbucket Server, use `workspace/repo`."
+      "helpMarkDown": "Repository in `owner/repo` format (e.g. `myorg/myrepo`). For Bitbucket Server, use `PROJECT_KEY/repo-slug`."
     },
     {
       "name": "serverUrl",
@@ -164,32 +164,54 @@
       "defaultValue": "false",
       "required": false,
       "groupName": "ai",
-      "helpMarkDown": "Use Claude to analyze the PR diff and post an AI-generated review comment.",
+      "helpMarkDown": "Use an AI model to analyze the PR diff and post a structured review comment.",
       "visibleRule": "action = reviewPR || action = createPR"
+    },
+    {
+      "name": "aiProvider",
+      "type": "pickList",
+      "label": "AI Provider",
+      "defaultValue": "anthropic",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "The AI hosting service to use for reviews.",
+      "options": {
+        "anthropic": "Anthropic (direct API)",
+        "azure":     "Azure AI Foundry",
+        "litellm":   "LiteLLM (self-hosted proxy)",
+        "bedrock":   "AWS Bedrock",
+        "vertex":    "Google Vertex AI"
+      },
+      "visibleRule": "enableAiReview = true"
     },
     {
       "name": "aiApiKey",
       "type": "string",
-      "label": "Anthropic API Key",
+      "label": "API Key",
       "defaultValue": "",
       "required": false,
       "groupName": "ai",
-      "helpMarkDown": "Your Anthropic API key. Store this in a secret pipeline variable. Get one at https://console.anthropic.com.",
-      "visibleRule": "enableAiReview = true"
+      "helpMarkDown": "API key for the selected AI provider. **Anthropic:** get from [console.anthropic.com](https://console.anthropic.com). **Azure AI Foundry:** your deployment API key. **LiteLLM:** your proxy key (leave empty if your proxy requires no auth). Store as a secret pipeline variable.",
+      "visibleRule": "enableAiReview = true && aiProvider != bedrock && aiProvider != vertex"
+    },
+    {
+      "name": "aiBaseUrl",
+      "type": "string",
+      "label": "AI Endpoint URL",
+      "defaultValue": "",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "Base URL of the AI endpoint. **Azure AI Foundry:** `https://<resource>.services.ai.azure.com/models` (find in Azure AI Foundry → Project → Endpoints). **LiteLLM:** your proxy URL, e.g. `http://localhost:4000`.",
+      "visibleRule": "enableAiReview = true && aiProvider != anthropic && aiProvider != bedrock && aiProvider != vertex"
     },
     {
       "name": "aiModel",
-      "type": "pickList",
-      "label": "Claude Model",
+      "type": "string",
+      "label": "Model",
       "defaultValue": "claude-sonnet-4-6",
       "required": false,
       "groupName": "ai",
-      "helpMarkDown": "The Claude model to use for code review.",
-      "options": {
-        "claude-opus-4-6": "Claude Opus 4.6 (most capable)",
-        "claude-sonnet-4-6": "Claude Sonnet 4.6 (recommended)",
-        "claude-haiku-4-5-20251001": "Claude Haiku 4.5 (fastest)"
-      },
+      "helpMarkDown": "Model identifier to use for review. **Anthropic / Vertex / LiteLLM:** `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5-20251001`. **AWS Bedrock:** `anthropic.claude-3-5-sonnet-20241022-v2:0`, `us.anthropic.claude-opus-4-5:0` (use cross-region inference prefix for newer models). **Azure AI Foundry:** your deployment name.",
       "visibleRule": "enableAiReview = true"
     },
     {
@@ -199,17 +221,17 @@
       "defaultValue": "",
       "required": false,
       "groupName": "ai",
-      "helpMarkDown": "Additional instructions or context to give the AI reviewer (e.g. 'Focus on security issues', 'This is a hotfix, be concise').",
+      "helpMarkDown": "Additional instructions for the AI reviewer (e.g. 'Focus on security issues', 'This is a hotfix, be concise').",
       "visibleRule": "enableAiReview = true"
     },
     {
       "name": "aiMaxDiffLines",
       "type": "string",
-      "label": "Max Diff Lines (per file in per-file mode)",
+      "label": "Max Diff Lines",
       "defaultValue": "500",
       "required": false,
       "groupName": "ai",
-      "helpMarkDown": "Truncate each file diff sent to the AI if it exceeds this many lines. In per-file mode this applies per file (divided by 3). Prevents token limit issues on large PRs.",
+      "helpMarkDown": "Truncate the diff sent to the AI if it exceeds this many lines. Prevents token limit issues on large PRs. In per-file mode, this limit is applied per file (divided by 3).",
       "visibleRule": "enableAiReview = true"
     },
     {
@@ -219,7 +241,7 @@
       "defaultValue": "standard",
       "required": false,
       "groupName": "ai",
-      "helpMarkDown": "**Standard**: single API call with the full diff. **Per-file**: each changed file is reviewed individually, then synthesized into one holistic assessment. Per-file is more thorough but uses more API tokens.",
+      "helpMarkDown": "**Standard:** single API call with the full diff. **Per-file:** each changed file is reviewed individually, then synthesised into one final assessment. Per-file is more thorough but uses more API calls.",
       "options": {
         "standard": "Standard (single pass)",
         "per-file": "Per-file + synthesis (thorough)"
@@ -233,18 +255,80 @@
       "defaultValue": "10",
       "required": false,
       "groupName": "ai",
-      "helpMarkDown": "In per-file mode, limit the number of files individually reviewed. Files beyond this limit are skipped. Increase for large PRs at the cost of more API calls.",
+      "helpMarkDown": "In per-file mode, the maximum number of files reviewed individually. Files beyond this limit are skipped.",
       "visibleRule": "aiReviewMode = per-file"
+    },
+    {
+      "name": "awsAccessKeyId",
+      "type": "string",
+      "label": "AWS Access Key ID",
+      "defaultValue": "",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "AWS access key ID for Bedrock authentication. Leave empty to use IAM role or environment credentials (`AWS_ACCESS_KEY_ID`). Store as a secret pipeline variable.",
+      "visibleRule": "enableAiReview = true && aiProvider = bedrock"
+    },
+    {
+      "name": "awsSecretAccessKey",
+      "type": "string",
+      "label": "AWS Secret Access Key",
+      "defaultValue": "",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "AWS secret access key for Bedrock authentication. Leave empty to use IAM role or environment credentials (`AWS_SECRET_ACCESS_KEY`). Store as a secret pipeline variable.",
+      "visibleRule": "enableAiReview = true && aiProvider = bedrock"
+    },
+    {
+      "name": "awsRegion",
+      "type": "string",
+      "label": "AWS Region",
+      "defaultValue": "us-east-1",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "AWS region where your Bedrock Claude model is enabled (e.g. `us-east-1`, `eu-west-1`). Enable the model in the AWS Bedrock console under Model access.",
+      "visibleRule": "enableAiReview = true && aiProvider = bedrock"
+    },
+    {
+      "name": "gcpProjectId",
+      "type": "string",
+      "label": "GCP Project ID",
+      "defaultValue": "",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "Google Cloud project ID where Vertex AI and Claude are enabled. Authentication uses Application Default Credentials (ADC) — set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to your service account key file path.",
+      "visibleRule": "enableAiReview = true && aiProvider = vertex"
+    },
+    {
+      "name": "gcpRegion",
+      "type": "string",
+      "label": "GCP Region",
+      "defaultValue": "us-east5",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "Google Cloud region where Claude is available on Vertex AI (e.g. `us-east5`, `europe-west1`). Check [Vertex AI model availability](https://cloud.google.com/vertex-ai/docs/generative-ai/learn/models) for supported regions.",
+      "visibleRule": "enableAiReview = true && aiProvider = vertex"
     }
   ],
   "outputVariables": [
     {
       "name": "PrUrl",
-      "description": "The URL of the created or found pull request."
+      "description": "The URL of the created or reviewed pull request."
     },
     {
       "name": "PrNumber",
-      "description": "The number of the created or found pull request."
+      "description": "The number of the created or reviewed pull request."
+    },
+    {
+      "name": "ReviewVerdict",
+      "description": "AI review verdict: lgtm, needs-work, or critical."
+    },
+    {
+      "name": "ReviewTotalIssues",
+      "description": "Total number of issues found by the AI review."
+    },
+    {
+      "name": "ReviewSummary",
+      "description": "One-line summary of the AI review."
     }
   ],
   "execution": {

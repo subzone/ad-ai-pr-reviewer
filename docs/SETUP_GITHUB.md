@@ -65,29 +65,29 @@ In your Azure DevOps project:
 In your `azure-pipelines.yml`:
 
 ```yaml
-trigger:
-  - main
+trigger: none
+
+pr:
+  branches:
+    include: [main]
 
 variables:
 - group: github-secrets  # Reference your variable group
 
-jobs:
-- job: CreatePR
-  pool:
-    vmImage: 'ubuntu-latest'
-  steps:
-  - task: AiPrReviewer@1
-    inputs:
-      action: createPR
-      provider: github
-      accessToken: $(GITHUB_PAT)  # Reference the secret variable
-      repository: myorg/myrepo
-      sourceBranch: $(Build.SourceBranchName)
-      targetBranch: main
-      prTitle: $(Build.SourceBranchName)
-      enableAiReview: true
-      aiApiKey: $(ANTHROPIC_API_KEY)
-      aiModel: claude-sonnet-4-6
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- task: AiPrReviewer@1
+  inputs:
+    action: reviewPR
+    provider: github
+    accessToken: $(GITHUB_PAT)
+    repository: myorg/myrepo
+    prNumber: $(System.PullRequest.PullRequestNumber)
+    enableAiReview: true
+    aiApiKey: $(ANTHROPIC_API_KEY)
+    aiModel: claude-sonnet-4-6
 ```
 
 ---
@@ -125,14 +125,19 @@ jobs:
 
 ### Create a Test Pipeline
 
-Create a simple `test-pr-pipeline.yml` to verify everything works:
+Create a simple `test-pr-pipeline.yml` referencing an open PR to verify everything works:
 
 ```yaml
-trigger:
-  - test-branch
+trigger: none
+
+parameters:
+- name: prNumber
+  displayName: PR Number to review
+  type: number
+  default: 1
 
 pool:
-  vmImage: 'ubuntu-latest'
+  vmImage: ubuntu-latest
 
 variables:
 - group: github-secrets
@@ -140,23 +145,23 @@ variables:
 steps:
 - task: AiPrReviewer@1
   inputs:
-    action: createPR
+    action: reviewPR
     provider: github
     accessToken: $(GITHUB_PAT)
     repository: myorg/myrepo
-    sourceBranch: test-branch
-    targetBranch: main
-    prTitle: "Test PR from ADO"
-    prDescription: "Testing AI PR Reviewer integration"
+    prNumber: ${{ parameters.prNumber }}
     enableAiReview: true
     aiApiKey: $(ANTHROPIC_API_KEY)
-    aiModel: claude-haiku-4-5-20251001  # Fastest for testing
+    aiModel: claude-haiku-4-5-20251001   # Fastest for testing
 
 - script: |
-    echo "PR URL: $(PrUrl)"
-    echo "PR Number: $(PrNumber)"
-  displayName: 'Show PR Details'
+    echo "Verdict: $(ReviewVerdict)"
+    echo "Issues:  $(ReviewTotalIssues)"
+    echo "PR URL:  $(PrUrl)"
+  displayName: Show review results
 ```
+
+Run it via **Pipelines → Run pipeline → enter a real PR number**.
 
 ---
 

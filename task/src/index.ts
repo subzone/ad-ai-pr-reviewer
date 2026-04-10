@@ -3,7 +3,7 @@ import { Provider, formatAiComment, formatManualComment } from './providers/base
 import { GitHubProvider } from './providers/github';
 import { GitLabProvider } from './providers/gitlab';
 import { BitbucketProvider } from './providers/bitbucket';
-import { reviewPullRequest } from './ai/reviewer';
+import { reviewPullRequest, AiProviderConfig } from './ai/reviewer';
 
 async function run(): Promise<void> {
   try {
@@ -23,14 +23,18 @@ async function run(): Promise<void> {
     const failOnExistingPR = tl.getBoolInput('failOnExistingPR', false);
 
     const enableAiReview = tl.getBoolInput('enableAiReview', false);
-    const aiApiKey = tl.getInput('aiApiKey', false) ?? '';
     const aiModel = tl.getInput('aiModel', false) ?? 'claude-sonnet-4-6';
     const aiReviewContext = tl.getInput('aiReviewContext', false) ?? '';
     const aiMaxDiffLines = parseInt(tl.getInput('aiMaxDiffLines', false) ?? '500', 10);
     const aiReviewMode = (tl.getInput('aiReviewMode', false) ?? 'standard') as 'standard' | 'per-file';
     const aiMaxFiles = parseInt(tl.getInput('aiMaxFiles', false) ?? '10', 10);
 
-    // ── Provider setup ───────────────────────────────────────────────────────
+    // ── AI provider config ────────────────────────────────────────────────────
+    const aiProviderConfig = enableAiReview
+      ? buildAiProviderConfig()
+      : null;
+
+    // ── Git provider setup ────────────────────────────────────────────────────
     const providerInstance = buildProvider(provider, accessToken, serverUrl);
 
     // ── Action routing ───────────────────────────────────────────────────────
@@ -45,7 +49,7 @@ async function run(): Promise<void> {
           prDescription,
           failOnExistingPR,
           enableAiReview,
-          aiApiKey,
+          aiProviderConfig,
           aiModel,
           aiReviewContext,
           aiMaxDiffLines,
@@ -62,7 +66,7 @@ async function run(): Promise<void> {
           prNumber,
           prTitle,
           prDescription,
-          aiApiKey,
+          aiProviderConfig,
           aiModel,
           aiReviewContext,
           aiMaxDiffLines,
@@ -103,7 +107,7 @@ interface CreatePRParams {
   prDescription: string;
   failOnExistingPR: boolean;
   enableAiReview: boolean;
-  aiApiKey: string;
+  aiProviderConfig: AiProviderConfig | null;
   aiModel: string;
   aiReviewContext: string;
   aiMaxDiffLines: number;
@@ -115,11 +119,10 @@ async function handleCreatePR(params: CreatePRParams): Promise<void> {
   const {
     provider, repository, sourceBranch, targetBranch,
     prTitle, prDescription, failOnExistingPR,
-    enableAiReview, aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines,
+    enableAiReview, aiProviderConfig, aiModel, aiReviewContext, aiMaxDiffLines,
     aiReviewMode, aiMaxFiles,
   } = params;
 
-  // Check for existing PR first
   console.log(`Checking for existing PR: ${sourceBranch} → ${targetBranch} in ${repository}`);
   const existing = await provider.findExistingPR(repository, sourceBranch, targetBranch);
 
@@ -132,17 +135,16 @@ async function handleCreatePR(params: CreatePRParams): Promise<void> {
     tl.setVariable('PrUrl', existing.url);
     tl.setVariable('PrNumber', String(existing.number));
 
-    if (enableAiReview) {
+    if (enableAiReview && aiProviderConfig) {
       await runAiReview({
         provider, repository, prNumber: existing.number,
         prTitle: existing.title, prDescription,
-        aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
+        aiProviderConfig, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
       });
     }
     return;
   }
 
-  // Create the PR
   console.log(`Creating PR "${prTitle}" (${sourceBranch} → ${targetBranch})`);
   const pr = await provider.createPR({
     repository, sourceBranch, targetBranch, title: prTitle, description: prDescription,
@@ -152,11 +154,11 @@ async function handleCreatePR(params: CreatePRParams): Promise<void> {
   tl.setVariable('PrUrl', pr.url);
   tl.setVariable('PrNumber', String(pr.number));
 
-  if (enableAiReview) {
+  if (enableAiReview && aiProviderConfig) {
     await runAiReview({
       provider, repository, prNumber: pr.number,
       prTitle: pr.title, prDescription,
-      aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
+      aiProviderConfig, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
     });
   }
 
@@ -169,7 +171,7 @@ interface ReviewPRParams {
   prNumber: number;
   prTitle: string;
   prDescription: string;
-  aiApiKey: string;
+  aiProviderConfig: AiProviderConfig | null;
   aiModel: string;
   aiReviewContext: string;
   aiMaxDiffLines: number;
@@ -178,14 +180,14 @@ interface ReviewPRParams {
 }
 
 async function handleReviewPR(params: ReviewPRParams): Promise<void> {
-  const { provider, repository, prNumber, aiApiKey } = params;
+  const { prNumber, aiProviderConfig } = params;
 
-  if (!aiApiKey) {
-    tl.setResult(tl.TaskResult.Failed, 'AI API Key is required for the reviewPR action.');
+  if (!aiProviderConfig) {
+    tl.setResult(tl.TaskResult.Failed, 'AI provider configuration is required for the reviewPR action.');
     return;
   }
 
-  await runAiReview(params);
+  await runAiReview(params as AiReviewParams);
   tl.setResult(tl.TaskResult.Succeeded, `AI review posted on PR #${prNumber}`);
 }
 
@@ -206,9 +208,7 @@ async function handleCommentPR(params: CommentPRParams): Promise<void> {
 
   const formatted = formatManualComment(commentBody);
   console.log(`Posting comment on PR #${prNumber}`);
-
   await provider.postComment({ repository, prNumber, body: formatted });
-
   tl.setResult(tl.TaskResult.Succeeded, `Comment posted on PR #${prNumber}`);
 }
 
@@ -220,7 +220,7 @@ interface AiReviewParams {
   prNumber: number;
   prTitle: string;
   prDescription: string;
-  aiApiKey: string;
+  aiProviderConfig: AiProviderConfig;
   aiModel: string;
   aiReviewContext: string;
   aiMaxDiffLines: number;
@@ -231,7 +231,7 @@ interface AiReviewParams {
 async function runAiReview(params: AiReviewParams): Promise<void> {
   const {
     provider, repository, prNumber, prTitle, prDescription,
-    aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
+    aiProviderConfig, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
   } = params;
 
   console.log(`Fetching diff for PR #${prNumber}...`);
@@ -242,8 +242,8 @@ async function runAiReview(params: AiReviewParams): Promise<void> {
     return;
   }
 
-  console.log(`Running AI review — mode: ${aiReviewMode}, model: ${aiModel}`);
-  const result = await reviewPullRequest(aiApiKey, {
+  console.log(`Running AI review — provider: ${aiProviderConfig.provider}, mode: ${aiReviewMode}, model: ${aiModel}`);
+  const result = await reviewPullRequest(aiProviderConfig, {
     diff,
     prTitle,
     prDescription,
@@ -255,11 +255,9 @@ async function runAiReview(params: AiReviewParams): Promise<void> {
   });
 
   const formattedComment = formatAiComment(result.fullComment);
-
   console.log(`Posting AI review comment: ${result.summary}`);
   await provider.postComment({ repository, prNumber, body: formattedComment });
 
-  // Expose review metrics as pipeline variables for downstream steps/summary
   tl.setVariable('ReviewSummary', result.summary);
   tl.setVariable('ReviewVerdict', result.verdict);
   tl.setVariable('ReviewTotalIssues', String(result.totalIssues));
@@ -269,6 +267,58 @@ async function runAiReview(params: AiReviewParams): Promise<void> {
   }
 
   console.log(`AI review complete — verdict: ${result.verdict}, issues: ${result.totalIssues}`);
+}
+
+// ── AI provider config builder ────────────────────────────────────────────────
+
+function buildAiProviderConfig(): AiProviderConfig {
+  const aiProvider = (tl.getInput('aiProvider', false) ?? 'anthropic') as
+    | 'anthropic' | 'azure' | 'litellm' | 'bedrock' | 'vertex';
+
+  switch (aiProvider) {
+    case 'anthropic': {
+      const apiKey = tl.getInput('aiApiKey', false) ?? '';
+      if (!apiKey) throw new Error('aiApiKey is required when using Anthropic as AI provider.');
+      return { provider: 'anthropic', apiKey };
+    }
+
+    case 'azure': {
+      const apiKey = tl.getInput('aiApiKey', false) ?? '';
+      const baseUrl = tl.getInput('aiBaseUrl', false) ?? '';
+      if (!apiKey) throw new Error('aiApiKey is required when using Azure AI Foundry.');
+      if (!baseUrl) throw new Error('aiBaseUrl is required when using Azure AI Foundry (e.g. https://<resource>.services.ai.azure.com/models).');
+      return { provider: 'azure', apiKey, baseUrl };
+    }
+
+    case 'litellm': {
+      const apiKey = tl.getInput('aiApiKey', false) ?? '';
+      const baseUrl = tl.getInput('aiBaseUrl', false) ?? '';
+      if (!baseUrl) throw new Error('aiBaseUrl is required when using LiteLLM (your proxy URL).');
+      return { provider: 'litellm', apiKey, baseUrl };
+    }
+
+    case 'bedrock': {
+      const region = tl.getInput('awsRegion', false) ?? '';
+      if (!region) throw new Error('awsRegion is required when using AWS Bedrock.');
+      return {
+        provider: 'bedrock',
+        accessKeyId:     tl.getInput('awsAccessKeyId', false) ?? undefined,
+        secretAccessKey: tl.getInput('awsSecretAccessKey', false) ?? undefined,
+        region,
+      };
+    }
+
+    case 'vertex': {
+      const projectId = tl.getInput('gcpProjectId', false) ?? '';
+      const region    = tl.getInput('gcpRegion', false) ?? '';
+      if (!projectId) throw new Error('gcpProjectId is required when using Google Vertex AI.');
+      if (!region)    throw new Error('gcpRegion is required when using Google Vertex AI (e.g. us-east5).');
+      return { provider: 'vertex', projectId, region };
+    }
+
+    default:
+      throw new Error(`Unknown AI provider: ${aiProvider}`);
+  }
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

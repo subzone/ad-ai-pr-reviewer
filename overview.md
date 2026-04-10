@@ -1,205 +1,400 @@
 # AI PR Reviewer
 
-Create pull requests and post **AI-generated code review comments** on GitHub, GitLab, and Bitbucket — directly from your Azure DevOps pipeline.
+**Automatic AI code reviews on GitHub, GitLab & Bitbucket — triggered directly from Azure DevOps pipelines.**
+
+No extra servers. No webhooks to configure. One task, three providers, real Claude reviews posted as PR comments.
 
 ---
 
-## What You Get
+## Quick Start — 3 steps
 
-✨ **AI-Powered Code Reviews**
-Use Claude to automatically review PR diffs and post structured feedback
+### Step 1 &nbsp;·&nbsp; Store your secrets
 
-🚀 **Automated PR Creation**
-Create pull requests from your ADO pipeline with one task
+In Azure DevOps → **Pipelines → Library → Variable groups**, create a group (e.g. `ai-reviewer-secrets`) with two secret variables:
 
-🔍 **Comprehensive Provider Support**
-Works with GitHub, GitLab (cloud & self-hosted), Bitbucket Cloud, and Bitbucket Server
+| Variable | Where to get it |
+|---|---|
+| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) → API Keys |
+| `GITHUB_PAT` / `GITLAB_PAT` / `BITBUCKET_PAT` | Your provider's token settings (see [setup guides](https://github.com/subzone/ad-ai-pr-reviewer/tree/main/docs)) |
 
-⚙️ **Flexible & Customizable**
-Choose Claude models, customize review context, adjust diff limits for your needs
+---
+
+### Step 2 &nbsp;·&nbsp; Pick your provider and copy the pipeline
+
+Click the section for your git host:
+
+<details>
+<summary><strong>🐙 GitHub</strong></summary>
+
+```yaml
+trigger: none
+
+pr:
+  branches:
+    include: [main]
+
+variables:
+- group: ai-reviewer-secrets   # contains GITHUB_PAT + ANTHROPIC_API_KEY
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- task: AiPrReviewer@1
+  inputs:
+    action: reviewPR
+    provider: github
+    accessToken: $(GITHUB_PAT)
+    repository: myorg/myrepo          # ← change this
+    prNumber: $(System.PullRequest.PullRequestNumber)
+    enableAiReview: true
+    aiApiKey: $(ANTHROPIC_API_KEY)
+    aiModel: claude-sonnet-4-6
+```
+
+</details>
+
+<details>
+<summary><strong>🦊 GitLab (cloud)</strong></summary>
+
+```yaml
+trigger: none
+
+pr:
+  branches:
+    include: [main]
+
+variables:
+- group: ai-reviewer-secrets   # contains GITLAB_PAT + ANTHROPIC_API_KEY
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- task: AiPrReviewer@1
+  inputs:
+    action: reviewPR
+    provider: gitlab
+    accessToken: $(GITLAB_PAT)
+    repository: mygroup/myproject     # ← change this
+    prNumber: $(System.PullRequest.PullRequestNumber)
+    enableAiReview: true
+    aiApiKey: $(ANTHROPIC_API_KEY)
+    aiModel: claude-sonnet-4-6
+```
+
+</details>
+
+<details>
+<summary><strong>🦊 GitLab (self-hosted)</strong></summary>
+
+```yaml
+trigger: none
+
+pr:
+  branches:
+    include: [main]
+
+variables:
+- group: ai-reviewer-secrets   # contains GITLAB_PAT + ANTHROPIC_API_KEY
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- task: AiPrReviewer@1
+  inputs:
+    action: reviewPR
+    provider: gitlab
+    accessToken: $(GITLAB_PAT)
+    repository: mygroup/myproject             # ← change this
+    serverUrl: https://gitlab.mycompany.com   # ← change this
+    prNumber: $(System.PullRequest.PullRequestNumber)
+    enableAiReview: true
+    aiApiKey: $(ANTHROPIC_API_KEY)
+    aiModel: claude-sonnet-4-6
+```
+
+</details>
+
+<details>
+<summary><strong>🪣 Bitbucket Cloud</strong></summary>
+
+```yaml
+trigger: none
+
+pr:
+  branches:
+    include: [main]
+
+variables:
+- group: ai-reviewer-secrets   # contains BITBUCKET_APP_PASSWORD + ANTHROPIC_API_KEY
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- task: AiPrReviewer@1
+  inputs:
+    action: reviewPR
+    provider: bitbucket
+    accessToken: $(BITBUCKET_APP_PASSWORD)   # format: username:app_password
+    repository: myworkspace/myrepo           # ← change this
+    prNumber: $(System.PullRequest.PullRequestNumber)
+    enableAiReview: true
+    aiApiKey: $(ANTHROPIC_API_KEY)
+    aiModel: claude-sonnet-4-6
+```
+
+> **Bitbucket App Password:** Personal settings → App passwords → Create → enable *Repositories: Read* and *Pull requests: Read & Write*
+
+</details>
+
+<details>
+<summary><strong>🏢 Bitbucket Server / Data Center</strong></summary>
+
+```yaml
+trigger: none
+
+pr:
+  branches:
+    include: [main]
+
+variables:
+- group: ai-reviewer-secrets   # contains BITBUCKET_PAT + ANTHROPIC_API_KEY
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- task: AiPrReviewer@1
+  inputs:
+    action: reviewPR
+    provider: bitbucket-server
+    accessToken: $(BITBUCKET_PAT)
+    repository: MYPROJECT/myrepo              # ← PROJECT_KEY/repo-slug
+    serverUrl: https://bitbucket.mycompany.com  # ← change this
+    prNumber: $(System.PullRequest.PullRequestNumber)
+    enableAiReview: true
+    aiApiKey: $(ANTHROPIC_API_KEY)
+    aiModel: claude-sonnet-4-6
+```
+
+</details>
+
+---
+
+### Step 3 &nbsp;·&nbsp; Create the ADO pipeline
+
+1. In Azure DevOps → **Pipelines → New pipeline**
+2. Connect to your repository
+3. Choose **Existing YAML file** and point to your file
+4. Open a pull request → the pipeline runs and posts the AI review
 
 ---
 
 ## What it does
 
-This extension adds a single pipeline task — **AiPrReviewer** — with three actions:
+The task has three actions you can mix and match:
 
-| Action | Description |
-|---|---|
-| **Create PR** | Opens a pull request on your source repository from any ADO pipeline stage |
-| **AI Review PR** | Fetches the PR diff, sends it to Claude, and posts a structured review comment |
-| **Comment PR** | Posts a manually authored comment clearly labelled as AI-generated |
-
----
-
-## Before You Use This
-
-You'll need:
-- ✅ GitHub/GitLab/Bitbucket Personal Access Token (see [setup guide](https://github.com/subzone/ad-ai-pr-reviewer/tree/main/docs))
-- ✅ Anthropic API Key (free trial at [console.anthropic.com](https://console.anthropic.com))
+| Action | Input | What happens |
+|---|---|---|
+| `reviewPR` | PR number | Fetches the diff, sends to Claude, posts structured review comment |
+| `createPR` | Source + target branch | Opens a PR on your git host; optionally runs AI review immediately |
+| `commentPR` | PR number + text | Posts a custom comment (build results, status, notes) |
 
 ---
 
-## Supported Providers
+## AI providers
 
-| Provider | Create PR | AI Review | Comment | Self-Hosted |
-|---|---|---|---|---|
-| **GitHub** | ✅ | ✅ | ✅ | GitHub Enterprise |
-| **GitLab** | ✅ | ✅ | ✅ | ✅ Yes (serverUrl) |
-| **Bitbucket Cloud** | ✅ | ✅ | ✅ | N/A |
-| **Bitbucket Server / Data Center** | ✅ | ✅ | ✅ | ✅ Yes (serverUrl) |
+Choose where to run the model. All providers host Claude models; the only difference is authentication and model naming.
 
-*For self-hosted instances (GitLab, Bitbucket), provide serverUrl in task configuration*
+| Provider | `aiProvider` value | Auth needed |
+|---|---|---|
+| **Anthropic (direct)** | `anthropic` | API key from [console.anthropic.com](https://console.anthropic.com) |
+| **Azure AI Foundry** | `azure` | Azure deployment API key + endpoint URL |
+| **LiteLLM** | `litellm` | Your proxy URL (API key optional) |
+| **AWS Bedrock** | `bedrock` | IAM role or AWS access key + secret + region |
+| **Google Vertex AI** | `vertex` | GCP project ID + region + Application Default Credentials |
 
----
-
-## AI Models
-
-Reviews are powered by **[Anthropic Claude](https://anthropic.com)**. Choose the right model:
-
-| Model | Speed | Quality | Best For | Cost |
-|---|---|---|---|---|
-| **Claude Opus 4.6** | 🐢 | ⭐⭐⭐ | Complex code, security audits | $15/1M tokens |
-| **Claude Sonnet 4.6** | 🚴 | ⭐⭐ | General use (recommended) | $3/1M tokens |
-| **Claude Haiku 4.5** | 🚀 | ⭐ | High-volume, cost-sensitive | $0.80/1M tokens |
-
----
-
-## Quick Start Example
+<details>
+<summary><strong>Anthropic (direct API) — default</strong></summary>
 
 ```yaml
-trigger:
-  - feature/*
-
-variables:
-- group: pr-review-secrets  # Variable group with GITHUB_PAT, ANTHROPIC_API_KEY
-
-pool:
-  vmImage: 'ubuntu-latest'
-
-steps:
 - task: AiPrReviewer@1
   inputs:
-    action: createPR
+    action: reviewPR
+    # ... git provider inputs ...
+    enableAiReview: true
+    aiProvider: anthropic
+    aiApiKey: $(ANTHROPIC_API_KEY)
+    aiModel: claude-sonnet-4-6
+```
+
+</details>
+
+<details>
+<summary><strong>Azure AI Foundry</strong></summary>
+
+Requires a Claude deployment in Azure AI Foundry. Find the endpoint URL in **Azure AI Foundry → Project → Deployments → your model → API endpoint**.
+
+```yaml
+- task: AiPrReviewer@1
+  inputs:
+    action: reviewPR
+    # ... git provider inputs ...
+    enableAiReview: true
+    aiProvider: azure
+    aiApiKey: $(AZURE_AI_API_KEY)
+    aiBaseUrl: $(AZURE_AI_ENDPOINT)      # e.g. https://<resource>.services.ai.azure.com/models
+    aiModel: claude-sonnet-4-6           # your deployment name
+```
+
+</details>
+
+<details>
+<summary><strong>AWS Bedrock</strong></summary>
+
+Enable the Claude model in **AWS Console → Bedrock → Model access** for your target region. Uses IAM role credentials automatically; supply keys only if not running on an EC2/ECS role.
+
+```yaml
+- task: AiPrReviewer@1
+  inputs:
+    action: reviewPR
+    # ... git provider inputs ...
+    enableAiReview: true
+    aiProvider: bedrock
+    awsRegion: us-east-1
+    awsAccessKeyId: $(AWS_ACCESS_KEY_ID)         # optional — leave blank to use IAM role
+    awsSecretAccessKey: $(AWS_SECRET_ACCESS_KEY) # optional — leave blank to use IAM role
+    aiModel: anthropic.claude-3-5-sonnet-20241022-v2:0
+```
+
+> **Bedrock model IDs** use the `anthropic.` prefix. Newer models on cross-region inference use the `us.` / `eu.` prefix (e.g. `us.anthropic.claude-opus-4-5:0`).
+
+</details>
+
+<details>
+<summary><strong>Google Vertex AI</strong></summary>
+
+Enable the Claude model in **Google Cloud Console → Vertex AI → Model Garden**. Authentication uses [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials) — set `GOOGLE_APPLICATION_CREDENTIALS` to your service account key file path in the pipeline.
+
+```yaml
+- task: AiPrReviewer@1
+  inputs:
+    action: reviewPR
+    # ... git provider inputs ...
+    enableAiReview: true
+    aiProvider: vertex
+    gcpProjectId: my-gcp-project
+    gcpRegion: us-east5
+    aiModel: claude-sonnet-4-6
+```
+
+</details>
+
+<details>
+<summary><strong>LiteLLM (self-hosted proxy)</strong></summary>
+
+Point the task at your LiteLLM proxy. The proxy handles the actual model routing. API key is optional depending on your proxy configuration.
+
+```yaml
+- task: AiPrReviewer@1
+  inputs:
+    action: reviewPR
+    # ... git provider inputs ...
+    enableAiReview: true
+    aiProvider: litellm
+    aiBaseUrl: http://litellm.internal:4000   # your proxy URL
+    aiApiKey: $(LITELLM_API_KEY)              # optional
+    aiModel: claude-sonnet-4-6
+```
+
+</details>
+
+---
+
+## Choose a model
+
+All providers support these Claude models (use the exact ID for your provider):
+
+| Model | Speed | Cost (Anthropic) | Best for |
+|---|---|---|---|
+| `claude-haiku-4-5-20251001` | ⚡ Fast | $0.80 / 1M tokens | High volume, quick feedback |
+| `claude-sonnet-4-6` | ◎ Balanced | $3 / 1M tokens | **General use — recommended** |
+| `claude-opus-4-6` | ◎ Thorough | $15 / 1M tokens | Security audits, complex changes |
+
+> AWS Bedrock uses different model IDs — see the Bedrock section above. Pricing on Azure / Bedrock / Vertex may differ from Anthropic direct.
+
+Typical cost per PR: **$0.001 – $0.05** depending on diff size and model.
+
+---
+
+## Customize the review focus
+
+Use `aiReviewContext` to tell Claude what to prioritize:
+
+```yaml
+- task: AiPrReviewer@1
+  inputs:
+    action: reviewPR
     provider: github
     accessToken: $(GITHUB_PAT)
     repository: myorg/myrepo
-    sourceBranch: $(Build.SourceBranchName)
-    targetBranch: main
-    prTitle: "Automated PR: $(Build.SourceBranchName)"
-    prDescription: "Created by ADO pipeline - Build #$(Build.BuildNumber)"
+    prNumber: $(System.PullRequest.PullRequestNumber)
     enableAiReview: true
     aiApiKey: $(ANTHROPIC_API_KEY)
     aiModel: claude-sonnet-4-6
-    aiReviewContext: "Focus on security and performance issues"
+    aiReviewContext: |
+      Focus on security vulnerabilities and breaking API changes.
+      Flag any hardcoded credentials or exposed secrets.
+    aiMaxDiffLines: 500   # truncate large diffs (default 500)
 ```
 
 ---
 
-## Key Features
+## Output variables
 
-### 🤖 Claude-Powered Reviews
-- Analyzes PR diffs in seconds
-- Posts structured feedback
-- Customizable review context (security, performance, style, etc.)
+After `reviewPR` or `createPR`, downstream steps can read:
 
-### 🔗 Multiple Git Providers
-- GitHub (cloud & Enterprise)
-- GitLab (cloud & self-hosted)
-- Bitbucket (Cloud & Server)
-- Not tied to any single provider
+| Variable | Value |
+|---|---|
+| `PrUrl` | Full URL to the PR |
+| `PrNumber` | Numeric PR ID |
+| `ReviewVerdict` | `lgtm` · `needs-work` · `critical` |
+| `ReviewTotalIssues` | Number of issues found |
+| `ReviewSummary` | One-line summary from Claude |
 
-### ⚡ Fast & Reliable
-- Real-time API calls (no batch delays)
-- Configurable diff truncation
-- Handles large PRs gracefully
-
-### 🔐 Secure
-- Tokens stored as ADO secrets
-- No data persistence
-- Anthropic API encryption
-- Supports self-hosted instances
-
-### 📊 Integrates with Your Workflow
-- Output variables for downstream tasks
-- Use in conditional steps
-- Chain with other pipeline tasks
-- Scheduled or event-triggered runs
-
----
-
-## Setup & Configuration
-
-### 1. Install Extension
-Install from this Marketplace page into your Azure DevOps organization
-
-### 2. Create Credentials
-- Generate token from your git provider (GitHub/GitLab/Bitbucket)
-- Get Anthropic API key from [console.anthropic.com](https://console.anthropic.com)
-- Store both as secrets in ADO variable groups
-
-### 3. Create Pipeline
-Use the [example pipeline](https://github.com/subzone/ad-ai-pr-reviewer/blob/main/examples/pipeline.yml) as template and customize for your needs
-
-### 4. Configure Task
-Set action, provider, repository, and credentials in task inputs
-
-### Detailed Setup Guides
-- [GitHub Setup](https://github.com/subzone/ad-ai-pr-reviewer/blob/main/docs/SETUP_GITHUB.md)
-- [GitLab Setup](https://github.com/subzone/ad-ai-pr-reviewer/blob/main/docs/SETUP_GITLAB.md)
-- [Bitbucket Setup](https://github.com/subzone/ad-ai-pr-reviewer/blob/main/docs/SETUP_BITBUCKET.md)
-- [Azure DevOps Setup](https://github.com/subzone/ad-ai-pr-reviewer/blob/main/docs/SETUP_ADO.md)
-
----
-
-## Output Variables
-
-The task exposes these variables for use in downstream steps:
-
-- `PrUrl` — Full URL to the created/reviewed PR
-- `PrNumber` — Numeric PR identifier
-
-Example:
 ```yaml
-- task: AiPrReviewer@1
-  name: CreatePR
-  inputs:
-    action: createPR
-    # ...
-
 - script: |
-    echo "PR created: $(CreatePR.PrUrl)"
-    echo "PR #: $(CreatePR.PrNumber)"
+    echo "PR: $(PrUrl)"
+    echo "Verdict: $(ReviewVerdict) — $(ReviewTotalIssues) issues"
 ```
 
 ---
 
-## Cost Estimate
+## Supported providers
 
-**Typical monthly cost:** $2–$50 depending on PR volume and model
-
-- 20 PRs/day with Haiku: ~$2/month
-- 20 PRs/day with Sonnet: ~$6/month
-- 20 PRs/day with Opus: ~$30/month
-
-See [FAQ](https://github.com/subzone/ad-ai-pr-reviewer/blob/main/docs/FAQ.md#how-much-does-ai-review-cost) for detailed pricing.
-
----
-
-## Questions & Support
-
-- **Documentation:** [github.com/subzone/ad-ai-pr-reviewer](https://github.com/subzone/ad-ai-pr-reviewer)
-- **Setup guides:** See `docs/` folder in repo
-- **Troubleshooting:** [TROUBLESHOOTING.md](https://github.com/subzone/ad-ai-pr-reviewer/blob/main/docs/TROUBLESHOOTING.md)
-- **FAQ:** [FAQ.md](https://github.com/subzone/ad-ai-pr-reviewer/blob/main/docs/FAQ.md)
-- **Report issues:** [GitHub Issues](https://github.com/subzone/ad-ai-pr-reviewer/issues)
+| Provider | Create PR | AI Review | Comment | Self-hosted |
+|---|---|---|---|---|
+| GitHub | ✅ | ✅ | ✅ | GitHub Enterprise ✅ |
+| GitLab | ✅ | ✅ | ✅ | ✅ via `serverUrl` |
+| Bitbucket Cloud | ✅ | ✅ | ✅ | — |
+| Bitbucket Server / DC | ✅ | ✅ | ✅ | ✅ via `serverUrl` |
 
 ---
 
-## About
+## Documentation
 
-**Authors:** [subzone](https://github.com/subzone)
-**License:** MIT
-**Source:** [github.com/subzone/ad-ai-pr-reviewer](https://github.com/subzone/ad-ai-pr-reviewer)
+- [GitHub setup](https://github.com/subzone/ad-ai-pr-reviewer/blob/main/docs/SETUP_GITHUB.md)
+- [GitLab setup](https://github.com/subzone/ad-ai-pr-reviewer/blob/main/docs/SETUP_GITLAB.md)
+- [Bitbucket setup](https://github.com/subzone/ad-ai-pr-reviewer/blob/main/docs/SETUP_BITBUCKET.md)
+- [Azure DevOps setup](https://github.com/subzone/ad-ai-pr-reviewer/blob/main/docs/SETUP_ADO.md)
+- [User guide](https://github.com/subzone/ad-ai-pr-reviewer/blob/main/docs/USER_GUIDE.md) — all actions, models, cost estimates
+- [Troubleshooting](https://github.com/subzone/ad-ai-pr-reviewer/blob/main/docs/TROUBLESHOOTING.md)
+- [FAQ](https://github.com/subzone/ad-ai-pr-reviewer/blob/main/docs/FAQ.md)
+- [Source code](https://github.com/subzone/ad-ai-pr-reviewer)
 
-Powered by [Anthropic Claude](https://www.anthropic.com)
+---
+
+**License:** MIT &nbsp;·&nbsp; **Publisher:** [subzone](https://github.com/subzone) &nbsp;·&nbsp; Powered by [Anthropic Claude](https://anthropic.com)

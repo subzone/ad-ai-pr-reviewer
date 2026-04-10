@@ -1,4 +1,64 @@
 import Anthropic from '@anthropic-ai/sdk';
+import AnthropicBedrock from '@anthropic-ai/bedrock-sdk';
+import AnthropicVertex from '@anthropic-ai/vertex-sdk';
+
+// ── Provider configuration ─────────────────────────────────────────────────────
+
+export type AiProviderConfig =
+  | { provider: 'anthropic'; apiKey: string }
+  | { provider: 'azure';     apiKey: string; baseUrl: string }
+  | { provider: 'litellm';   apiKey: string; baseUrl: string }
+  | { provider: 'bedrock';   accessKeyId?: string; secretAccessKey?: string; region: string }
+  | { provider: 'vertex';    projectId: string; region: string };
+
+// Minimal duck-typed interface satisfied by Anthropic, AnthropicBedrock, and AnthropicVertex
+type AnthropicLike = {
+  messages: {
+    create(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message>;
+  };
+};
+
+function buildAiClient(config: AiProviderConfig): AnthropicLike {
+  switch (config.provider) {
+    case 'anthropic':
+      return new Anthropic({ apiKey: config.apiKey });
+
+    case 'azure':
+      // Azure AI Foundry exposes Claude via an Anthropic-compatible endpoint.
+      // Auth uses the deployment API key passed as both the SDK apiKey and x-api-key header.
+      return new Anthropic({
+        apiKey: config.apiKey,
+        baseURL: config.baseUrl,
+        defaultHeaders: { 'api-key': config.apiKey },
+      });
+
+    case 'litellm':
+      // LiteLLM proxy implements the Anthropic Messages API.
+      // apiKey may be a proxy-level key or empty depending on proxy config.
+      return new Anthropic({
+        apiKey: config.apiKey || 'no-key',
+        baseURL: config.baseUrl,
+      });
+
+    case 'bedrock':
+      // AWS credentials fall back to environment variables / IAM role if not provided.
+      return new AnthropicBedrock({
+        ...(config.accessKeyId    ? { awsAccessKey: config.accessKeyId }    : {}),
+        ...(config.secretAccessKey ? { awsSecretKey: config.secretAccessKey } : {}),
+        awsRegion: config.region,
+      }) as unknown as AnthropicLike;
+
+    case 'vertex':
+      // GCP authentication uses Application Default Credentials (ADC).
+      // Run `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS.
+      return new AnthropicVertex({
+        projectId: config.projectId,
+        region:    config.region,
+      }) as unknown as AnthropicLike;
+  }
+}
+
+// ── Public types ───────────────────────────────────────────────────────────────
 
 export interface ReviewOptions {
   diff: string;
@@ -28,11 +88,13 @@ const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_MAX_DIFF_LINES = 500;
 const DEFAULT_MAX_FILES = 10;
 
+// ── Entry point ────────────────────────────────────────────────────────────────
+
 export async function reviewPullRequest(
-  apiKey: string,
+  config: AiProviderConfig,
   options: ReviewOptions,
 ): Promise<ReviewResult> {
-  const client = new Anthropic({ apiKey });
+  const client = buildAiClient(config);
 
   if (options.reviewMode === 'per-file') {
     return reviewPerFile(client, options);
@@ -41,35 +103,28 @@ export async function reviewPullRequest(
 }
 
 // ── Standard mode ─────────────────────────────────────────────────────────────
-// Single API call with the full diff, truncated if needed.
 
 async function reviewStandard(
-  client: Anthropic,
+  client: AnthropicLike,
   options: ReviewOptions,
 ): Promise<ReviewResult> {
   const maxLines = options.maxDiffLines ?? DEFAULT_MAX_DIFF_LINES;
   const diff = truncateDiff(options.diff, maxLines);
 
-  const systemPrompt = buildSystemPrompt();
-  const userPrompt = buildStandardPrompt(options, diff);
-
   const message = await client.messages.create({
     model: options.model ?? DEFAULT_MODEL,
     max_tokens: 2048,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
+    system: buildSystemPrompt(),
+    messages: [{ role: 'user', content: buildStandardPrompt(options, diff) }],
   });
 
-  const reviewText = extractText(message);
-  return buildResult(reviewText);
+  return buildResult(extractText(message));
 }
 
 // ── Per-file mode ─────────────────────────────────────────────────────────────
-// Each changed file gets its own focused review call, then a synthesis call
-// combines all findings into one holistic assessment.
 
 async function reviewPerFile(
-  client: Anthropic,
+  client: AnthropicLike,
   options: ReviewOptions,
 ): Promise<ReviewResult> {
   const files = splitDiffByFile(options.diff);
@@ -79,7 +134,6 @@ async function reviewPerFile(
 
   console.log(`Per-file review: ${filesToReview.length} files${skipped > 0 ? ` (${skipped} skipped — limit ${maxFiles})` : ''}`);
 
-  // Step 1: review each file individually
   const fileFindings: Array<{ file: string; findings: string }> = [];
   for (const { file, diff } of filesToReview) {
     const findings = await reviewSingleFile(client, options, file, diff);
@@ -87,13 +141,12 @@ async function reviewPerFile(
     console.log(`  reviewed: ${file}`);
   }
 
-  // Step 2: synthesize all per-file findings into one integral assessment
   const fullComment = await synthesizeFindings(client, options, fileFindings, skipped);
   return buildResult(fullComment);
 }
 
 async function reviewSingleFile(
-  client: Anthropic,
+  client: AnthropicLike,
   options: ReviewOptions,
   file: string,
   diff: string,
@@ -130,7 +183,7 @@ If the file looks fine, say "No issues." in one line.`;
 }
 
 async function synthesizeFindings(
-  client: Anthropic,
+  client: AnthropicLike,
   options: ReviewOptions,
   fileFindings: Array<{ file: string; findings: string }>,
   skippedFiles: number,
@@ -178,7 +231,6 @@ End your response with this exact block (choose one verdict, count only real iss
 
   const synthesis = extractText(message);
 
-  // Append the per-file breakdown as a collapsible section
   const perFileSection = [
     '',
     '---',
@@ -257,7 +309,7 @@ function buildStandardPrompt(options: ReviewOptions, diff: string): string {
 function extractText(message: Anthropic.Message): string {
   const content = message.content[0];
   if (content.type !== 'text') {
-    throw new Error('Unexpected response type from Claude API');
+    throw new Error('Unexpected response type from AI model');
   }
   return content.text;
 }
