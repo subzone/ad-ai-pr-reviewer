@@ -1,8 +1,8 @@
 # Azure DevOps pipeline — GitLab repository integration
 #
 # SCENARIO: Your source code lives on GitLab (cloud or self-hosted).
-# This ADO pipeline creates a Merge Request, posts an AI review, and
-# comments with the build result.
+# This ADO pipeline runs on every merge request targeting main, posts an AI
+# review, and comments with the build result.
 #
 # REQUIRED pipeline variables (mark as secret in ADO):
 #   GITLAB_PAT         — GitLab Personal Access Token with `api` scope
@@ -15,51 +15,43 @@
 #   2. In ADO: New Pipeline → GitLab → your repo → Existing YAML file
 #      (or GitHub/other source if you mirror to ADO)
 #   3. Set the secret variables above in pipeline settings
-#   4. Push a feature branch → pipeline runs automatically
+#   4. Open a merge request on GitLab → pipeline runs automatically
 
-trigger:
+trigger: none
+
+pr:
   branches:
     include:
-      - feature/*
-      - fix/*
-      - hotfix/*
-
-pr: none
+      - main
+      - develop
 
 pool:
   vmImage: ubuntu-latest
 
 variables:
   TARGET_REPO: mygroup/myproject   # replace with your GitLab namespace/project
-  TARGET_BRANCH: main
   AI_MODEL: claude-sonnet-4-6
   # GITLAB_URL: https://gitlab.mycompany.com  # uncomment for self-hosted GitLab
   #                                            # omit or leave empty for gitlab.com
 
 stages:
   - stage: PullRequest
-    displayName: Create MR + AI Review
+    displayName: AI Review MR
     jobs:
-      - job: CreateAndReview
-        displayName: Open Merge Request on GitLab with AI review
+      - job: ReviewMR
+        displayName: Review Merge Request on GitLab with AI
         steps:
 
-          # Step 1: Create the MR and post AI review
+          # Step 1: Post an AI review comment on the open MR
           - task: AiPrReviewer@1
-            displayName: Create MR + AI Review
+            displayName: AI Review MR
             inputs:
-              action: createPR
+              action: reviewPR
               provider: gitlab
               accessToken: $(GITLAB_PAT)
               repository: $(TARGET_REPO)
               # serverUrl: $(GITLAB_URL)       # uncomment for self-hosted GitLab
-              sourceBranch: $(Build.SourceBranchName)
-              targetBranch: $(TARGET_BRANCH)
-              prTitle: "$(Build.SourceBranchName)"
-              prDescription: |
-                Automated MR created by Azure DevOps.
-                **Build:** $(Build.BuildNumber)
-                **Triggered by:** $(Build.RequestedFor)
+              prNumber: $(System.PullRequest.PullRequestNumber)
               enableAiReview: true
               aiApiKey: $(ANTHROPIC_API_KEY)
               aiModel: $(AI_MODEL)
@@ -67,12 +59,11 @@ stages:
                 This is a GitLab project. Focus on: merge conflicts potential,
                 security issues, and adherence to our coding standards.
               aiMaxDiffLines: 500
-              failOnExistingPR: false
 
           # Step 2: Print the MR link
           - script: |
-              echo "MR created: $(PrUrl)"
-              echo "MR number:  $(PrNumber)"
+              echo "Reviewed MR: $(PrUrl)"
+              echo "MR number:   $(System.PullRequest.PullRequestNumber)"
             displayName: Print MR info
 
           # Step 3: Post build status as a comment on the MR
@@ -85,7 +76,7 @@ stages:
               accessToken: $(GITLAB_PAT)
               repository: $(TARGET_REPO)
               # serverUrl: $(GITLAB_URL)       # uncomment for self-hosted GitLab
-              prNumber: $(PrNumber)
+              prNumber: $(System.PullRequest.PullRequestNumber)
               commentBody: |
                 ## Build Result: $(Agent.JobStatus)
 

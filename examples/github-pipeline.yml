@@ -1,8 +1,8 @@
 # Azure DevOps pipeline — GitHub repository integration
 #
-# SCENARIO: Your source code lives on GitHub. This ADO pipeline runs on
-# every feature/fix branch push, creates a PR against main, posts an AI
-# review, then comments with the build result.
+# SCENARIO: Your source code lives on GitHub. This ADO pipeline runs on every
+# pull request targeting main, posts an AI review, then comments with the
+# build result.
 #
 # REQUIRED pipeline variables (mark as secret in ADO):
 #   GITHUB_PAT         — GitHub PAT with `repo` scope
@@ -12,48 +12,40 @@
 #   1. Copy this file into your repo at any path (e.g. .ado/pr-pipeline.yml)
 #   2. In ADO: New Pipeline → GitHub → your repo → Existing YAML file
 #   3. Set the two secret variables above in the pipeline settings
-#   4. Push a feature branch → pipeline runs automatically
+#   4. Open a pull request on GitHub → pipeline runs automatically
 
-trigger:
+trigger: none
+
+pr:
   branches:
     include:
-      - feature/*
-      - fix/*
-      - hotfix/*
-
-pr: none  # this pipeline IS the PR creation step, don't run on PRs
+      - main
+      - develop
 
 pool:
   vmImage: ubuntu-latest
 
 variables:
   TARGET_REPO: myorg/myrepo        # replace with your GitHub org/repo
-  TARGET_BRANCH: main
   AI_MODEL: claude-sonnet-4-6     # or claude-opus-4-6, claude-haiku-4-5-20251001
 
 stages:
   - stage: PullRequest
-    displayName: Create PR + AI Review
+    displayName: AI Review PR
     jobs:
-      - job: CreateAndReview
-        displayName: Open PR on GitHub with AI review
+      - job: ReviewPR
+        displayName: Review PR on GitHub with AI
         steps:
 
-          # Step 1: Create the PR and immediately post an AI review comment
+          # Step 1: Post an AI review comment on the open PR
           - task: AiPrReviewer@1
-            displayName: Create PR + AI Review
+            displayName: AI Review PR
             inputs:
-              action: createPR
+              action: reviewPR
               provider: github
               accessToken: $(GITHUB_PAT)
               repository: $(TARGET_REPO)
-              sourceBranch: $(Build.SourceBranchName)
-              targetBranch: $(TARGET_BRANCH)
-              prTitle: "$(Build.SourceBranchName)"
-              prDescription: |
-                Automated PR created by Azure DevOps.
-                **Build:** $(Build.BuildNumber)
-                **Triggered by:** $(Build.RequestedFor)
+              prNumber: $(System.PullRequest.PullRequestNumber)
               enableAiReview: true
               aiApiKey: $(ANTHROPIC_API_KEY)
               aiModel: $(AI_MODEL)
@@ -61,12 +53,11 @@ stages:
                 Focus on: correctness, security vulnerabilities, and breaking API changes.
                 Flag any hardcoded credentials or sensitive data.
               aiMaxDiffLines: 500
-              failOnExistingPR: false   # reuse PR if branch was already pushed
 
           # Step 2: Print the PR link to the pipeline log
           - script: |
-              echo "PR created: $(PrUrl)"
-              echo "PR number:  $(PrNumber)"
+              echo "Reviewed PR: $(PrUrl)"
+              echo "PR number:   $(System.PullRequest.PullRequestNumber)"
             displayName: Print PR info
 
           # Step 3: After tests/build, post a follow-up status comment
@@ -78,7 +69,7 @@ stages:
               provider: github
               accessToken: $(GITHUB_PAT)
               repository: $(TARGET_REPO)
-              prNumber: $(PrNumber)
+              prNumber: $(System.PullRequest.PullRequestNumber)
               commentBody: |
                 ## Build Result: $(Agent.JobStatus)
 

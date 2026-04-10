@@ -149,9 +149,13 @@ Your job:
 2. Flag any cross-file issues (e.g. interface changed in one file but callers not updated)
 3. Note any patterns across multiple files (e.g. consistent missing error handling)
 4. Group all findings under: Bugs, Security, Performance, Style
-5. Give a final verdict: LGTM, Needs Work, or Critical Issues
+5. Only list real, concrete issues as bullet points. Omit any category that has nothing to report — do not write "No issues found" bullets.
 
-Use markdown. Be direct. Do not repeat per-file findings verbatim — synthesize them.`;
+Use markdown. Be direct. Do not repeat per-file findings verbatim — synthesize them.
+
+End your response with this exact block (choose one verdict, count only real issues):
+**Review Verdict:** LGTM | Needs Work | Critical Issues
+**Issues Found:** [number]`;
 
   const user = [
     `## PR: ${options.prTitle}`,
@@ -211,7 +215,12 @@ Guidelines:
 - Acknowledge good patterns when you see them.
 - Group feedback by category (e.g., Bugs, Security, Performance, Style).
 - If the change is small or looks good, say so briefly — don't pad feedback.
-- Use markdown formatting in your response.`;
+- Use markdown formatting in your response.
+- Only list real, concrete issues as bullet points. If a category has nothing to report, omit it entirely — do not write "No issues found" bullets.
+
+End your response with this exact block (choose one verdict, count only real issues):
+**Review Verdict:** LGTM | Needs Work | Critical Issues
+**Issues Found:** [number]`;
 }
 
 function buildStandardPrompt(options: ReviewOptions, diff: string): string {
@@ -256,8 +265,14 @@ function extractText(message: Anthropic.Message): string {
 function buildResult(reviewText: string): ReviewResult {
   const summary = extractSummaryLine(reviewText);
   const categories = parseCategories(reviewText);
-  const totalIssues = categories.reduce((sum, c) => sum + c.count, 0);
   const verdict = determineVerdict(categories, reviewText);
+
+  // Prefer the explicit count the AI was asked to emit; fall back to category sum
+  const issueCountMatch = reviewText.match(/\*\*Issues Found:\*\*\s*(\d+)/i);
+  const totalIssues = issueCountMatch
+    ? parseInt(issueCountMatch[1], 10)
+    : categories.reduce((sum, c) => sum + c.count, 0);
+
   return { summary, fullComment: reviewText, categories, verdict, totalIssues };
 }
 
@@ -297,7 +312,11 @@ function parseCategories(review: string): ReviewCategory[] {
       currentCategory = headingMatch[1].replace(/[*_`]/g, '').trim();
       count = 0;
     } else if (currentCategory && /^[-*]\s+/.test(line)) {
-      count++;
+      // Skip bullets that state there are no issues — these are not findings
+      const content = line.replace(/^[-*]\s+/, '').trim();
+      if (!/^(no |none|nothing|n\/a)/i.test(content)) {
+        count++;
+      }
     }
   }
   if (currentCategory !== null && count > 0) {
@@ -310,8 +329,24 @@ function determineVerdict(
   categories: ReviewCategory[],
   review: string,
 ): 'lgtm' | 'needs-work' | 'critical' {
-  const criticalSignals = /critical|security vulnerability|breaking change|must fix|high.?risk/i;
-  if (criticalSignals.test(review)) return 'critical';
+  // Parse the explicit verdict line the prompt requests — most reliable signal
+  const verdictMatch = review.match(/\*\*Review Verdict:\*\*\s*(.+)/i);
+  if (verdictMatch) {
+    const v = verdictMatch[1].trim().toLowerCase();
+    if (v.includes('critical')) return 'critical';
+    if (v.includes('needs work') || v.includes('needs-work')) return 'needs-work';
+    if (v.includes('lgtm')) return 'lgtm';
+  }
+
+  // Fallback heuristics — only trigger on affirmative critical signals, not
+  // negative mentions ("no critical issues", "there are no breaking changes")
+  for (const line of review.split('\n')) {
+    const lower = line.toLowerCase();
+    if (/\b(no|not|without|none|zero)\b/.test(lower)) continue;
+    if (/critical|security vulnerability|breaking change|must fix|high.?risk/.test(lower)) {
+      return 'critical';
+    }
+  }
 
   const securityCat = categories.find(c => /security/i.test(c.name));
   const bugsCat = categories.find(c => /bug|error|issue|fix/i.test(c.name));

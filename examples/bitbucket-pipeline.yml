@@ -1,8 +1,8 @@
 # Azure DevOps pipeline — Bitbucket repository integration
 #
 # SCENARIO: Your source code lives on Bitbucket Cloud or Bitbucket Server
-# (Data Center). This ADO pipeline creates a PR, posts an AI review, and
-# comments with the build result.
+# (Data Center). This ADO pipeline runs on every pull request targeting main,
+# posts an AI review, and comments with the build result.
 #
 # REQUIRED pipeline variables (mark as secret in ADO):
 #
@@ -24,22 +24,20 @@
 #   2. Update TARGET_REPO and PROVIDER below for your setup
 #   3. In ADO: New Pipeline → Bitbucket Cloud → your repo → Existing YAML file
 #   4. Set the secret variables above in pipeline settings
-#   5. Push a feature branch → pipeline runs automatically
+#   5. Open a pull request on Bitbucket → pipeline runs automatically
 
-trigger:
+trigger: none
+
+pr:
   branches:
     include:
-      - feature/*
-      - fix/*
-      - hotfix/*
-
-pr: none
+      - main
+      - develop
 
 pool:
   vmImage: ubuntu-latest
 
 variables:
-  TARGET_BRANCH: main
   AI_MODEL: claude-sonnet-4-6
 
   # ── Bitbucket Cloud ──────────────────────────────────────────────────────────
@@ -55,28 +53,22 @@ variables:
 
 stages:
   - stage: PullRequest
-    displayName: Create PR + AI Review
+    displayName: AI Review PR
     jobs:
-      - job: CreateAndReview
-        displayName: Open PR on Bitbucket with AI review
+      - job: ReviewPR
+        displayName: Review PR on Bitbucket with AI
         steps:
 
-          # Step 1: Create the PR and post AI review
+          # Step 1: Post an AI review comment on the open PR
           - task: AiPrReviewer@1
-            displayName: Create PR + AI Review
+            displayName: AI Review PR
             inputs:
-              action: createPR
+              action: reviewPR
               provider: $(PROVIDER)
               accessToken: $(ACCESS_TOKEN)
               repository: $(TARGET_REPO)
               serverUrl: $(SERVER_URL)         # ignored for Bitbucket Cloud
-              sourceBranch: $(Build.SourceBranchName)
-              targetBranch: $(TARGET_BRANCH)
-              prTitle: "$(Build.SourceBranchName)"
-              prDescription: |
-                Automated PR created by Azure DevOps.
-                **Build:** $(Build.BuildNumber)
-                **Triggered by:** $(Build.RequestedFor)
+              prNumber: $(System.PullRequest.PullRequestNumber)
               enableAiReview: true
               aiApiKey: $(ANTHROPIC_API_KEY)
               aiModel: $(AI_MODEL)
@@ -84,12 +76,11 @@ stages:
                 Focus on: correctness, security vulnerabilities, and performance issues.
                 Flag any hardcoded credentials or sensitive data.
               aiMaxDiffLines: 500
-              failOnExistingPR: false
 
           # Step 2: Print the PR link
           - script: |
-              echo "PR created: $(PrUrl)"
-              echo "PR number:  $(PrNumber)"
+              echo "Reviewed PR: $(PrUrl)"
+              echo "PR number:   $(System.PullRequest.PullRequestNumber)"
             displayName: Print PR info
 
           # Step 3: Post build status comment
@@ -102,7 +93,7 @@ stages:
               accessToken: $(ACCESS_TOKEN)
               repository: $(TARGET_REPO)
               serverUrl: $(SERVER_URL)
-              prNumber: $(PrNumber)
+              prNumber: $(System.PullRequest.PullRequestNumber)
               commentBody: |
                 ## Build Result: $(Agent.JobStatus)
 
