@@ -6,49 +6,84 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.reviewPullRequest = reviewPullRequest;
 exports.splitDiffByFile = splitDiffByFile;
 const sdk_1 = __importDefault(require("@anthropic-ai/sdk"));
+const bedrock_sdk_1 = __importDefault(require("@anthropic-ai/bedrock-sdk"));
+const vertex_sdk_1 = __importDefault(require("@anthropic-ai/vertex-sdk"));
+function buildAiClient(config) {
+    switch (config.provider) {
+        case 'anthropic':
+            return new sdk_1.default({ apiKey: config.apiKey });
+        case 'azure':
+            // Azure AI Foundry exposes Claude via an Anthropic-compatible endpoint.
+            // Auth uses the deployment API key passed as both the SDK apiKey and x-api-key header.
+            return new sdk_1.default({
+                apiKey: config.apiKey,
+                baseURL: config.baseUrl,
+                defaultHeaders: { 'api-key': config.apiKey },
+            });
+        case 'litellm':
+            // LiteLLM proxy implements the Anthropic Messages API.
+            // apiKey may be a proxy-level key or empty depending on proxy config.
+            return new sdk_1.default({
+                apiKey: config.apiKey || 'no-key',
+                baseURL: config.baseUrl,
+            });
+        case 'bedrock': {
+            // AWS credentials fall back to environment variables / IAM role if not provided.
+            // Use separate constructor calls so TypeScript resolves each overload independently.
+            let bedrockClient;
+            if (config.accessKeyId && config.secretAccessKey) {
+                bedrockClient = new bedrock_sdk_1.default({ awsAccessKey: config.accessKeyId, awsSecretKey: config.secretAccessKey, awsRegion: config.region });
+            }
+            else {
+                bedrockClient = new bedrock_sdk_1.default({ awsRegion: config.region });
+            }
+            return bedrockClient;
+        }
+        case 'vertex':
+            // GCP authentication uses Application Default Credentials (ADC).
+            // Run `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS.
+            return new vertex_sdk_1.default({
+                projectId: config.projectId,
+                region: config.region,
+            });
+    }
+}
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_MAX_DIFF_LINES = 500;
 const DEFAULT_MAX_FILES = 10;
-async function reviewPullRequest(apiKey, options) {
-    const client = new sdk_1.default({ apiKey });
+// ── Entry point ────────────────────────────────────────────────────────────────
+async function reviewPullRequest(config, options) {
+    const client = buildAiClient(config);
     if (options.reviewMode === 'per-file') {
         return reviewPerFile(client, options);
     }
     return reviewStandard(client, options);
 }
 // ── Standard mode ─────────────────────────────────────────────────────────────
-// Single API call with the full diff, truncated if needed.
 async function reviewStandard(client, options) {
     const maxLines = options.maxDiffLines ?? DEFAULT_MAX_DIFF_LINES;
     const diff = truncateDiff(options.diff, maxLines);
-    const systemPrompt = buildSystemPrompt();
-    const userPrompt = buildStandardPrompt(options, diff);
     const message = await client.messages.create({
         model: options.model ?? DEFAULT_MODEL,
         max_tokens: 2048,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
+        system: buildSystemPrompt(),
+        messages: [{ role: 'user', content: buildStandardPrompt(options, diff) }],
     });
-    const reviewText = extractText(message);
-    return buildResult(reviewText);
+    return buildResult(extractText(message));
 }
 // ── Per-file mode ─────────────────────────────────────────────────────────────
-// Each changed file gets its own focused review call, then a synthesis call
-// combines all findings into one holistic assessment.
 async function reviewPerFile(client, options) {
     const files = splitDiffByFile(options.diff);
     const maxFiles = options.maxFiles ?? DEFAULT_MAX_FILES;
     const filesToReview = files.slice(0, maxFiles);
     const skipped = files.length - filesToReview.length;
     console.log(`Per-file review: ${filesToReview.length} files${skipped > 0 ? ` (${skipped} skipped — limit ${maxFiles})` : ''}`);
-    // Step 1: review each file individually
     const fileFindings = [];
     for (const { file, diff } of filesToReview) {
         const findings = await reviewSingleFile(client, options, file, diff);
         fileFindings.push({ file, findings });
         console.log(`  reviewed: ${file}`);
     }
-    // Step 2: synthesize all per-file findings into one integral assessment
     const fullComment = await synthesizeFindings(client, options, fileFindings, skipped);
     return buildResult(fullComment);
 }
@@ -90,9 +125,13 @@ Your job:
 2. Flag any cross-file issues (e.g. interface changed in one file but callers not updated)
 3. Note any patterns across multiple files (e.g. consistent missing error handling)
 4. Group all findings under: Bugs, Security, Performance, Style
-5. Give a final verdict: LGTM, Needs Work, or Critical Issues
+5. Only list real, concrete issues as bullet points. Omit any category that has nothing to report — do not write "No issues found" bullets.
 
-Use markdown. Be direct. Do not repeat per-file findings verbatim — synthesize them.`;
+Use markdown. Be direct. Do not repeat per-file findings verbatim — synthesize them.
+
+End your response with this exact block (choose one verdict, count only real issues):
+**Review Verdict:** LGTM | Needs Work | Critical Issues
+**Issues Found:** [number]`;
     const user = [
         `## PR: ${options.prTitle}`,
         options.prDescription ? `**Description:** ${options.prDescription}` : '',
@@ -111,7 +150,6 @@ Use markdown. Be direct. Do not repeat per-file findings verbatim — synthesize
         messages: [{ role: 'user', content: user }],
     });
     const synthesis = extractText(message);
-    // Append the per-file breakdown as a collapsible section
     const perFileSection = [
         '',
         '---',
@@ -144,7 +182,12 @@ Guidelines:
 - Acknowledge good patterns when you see them.
 - Group feedback by category (e.g., Bugs, Security, Performance, Style).
 - If the change is small or looks good, say so briefly — don't pad feedback.
-- Use markdown formatting in your response.`;
+- Use markdown formatting in your response.
+- Only list real, concrete issues as bullet points. If a category has nothing to report, omit it entirely — do not write "No issues found" bullets.
+
+End your response with this exact block (choose one verdict, count only real issues):
+**Review Verdict:** LGTM | Needs Work | Critical Issues
+**Issues Found:** [number]`;
 }
 function buildStandardPrompt(options, diff) {
     const lines = [];
@@ -171,15 +214,19 @@ function buildStandardPrompt(options, diff) {
 function extractText(message) {
     const content = message.content[0];
     if (content.type !== 'text') {
-        throw new Error('Unexpected response type from Claude API');
+        throw new Error('Unexpected response type from AI model');
     }
     return content.text;
 }
 function buildResult(reviewText) {
     const summary = extractSummaryLine(reviewText);
     const categories = parseCategories(reviewText);
-    const totalIssues = categories.reduce((sum, c) => sum + c.count, 0);
     const verdict = determineVerdict(categories, reviewText);
+    // Prefer the explicit count the AI was asked to emit; fall back to category sum
+    const issueCountMatch = reviewText.match(/\*\*Issues Found:\*\*\s*(\d+)/i);
+    const totalIssues = issueCountMatch
+        ? parseInt(issueCountMatch[1], 10)
+        : categories.reduce((sum, c) => sum + c.count, 0);
     return { summary, fullComment: reviewText, categories, verdict, totalIssues };
 }
 function truncateDiff(diff, maxLines) {
@@ -216,7 +263,11 @@ function parseCategories(review) {
             count = 0;
         }
         else if (currentCategory && /^[-*]\s+/.test(line)) {
-            count++;
+            // Skip bullets that state there are no issues — these are not findings
+            const content = line.replace(/^[-*]\s+/, '').trim();
+            if (!/^(no |none|nothing|n\/a)/i.test(content)) {
+                count++;
+            }
         }
     }
     if (currentCategory !== null && count > 0) {
@@ -225,9 +276,27 @@ function parseCategories(review) {
     return categories;
 }
 function determineVerdict(categories, review) {
-    const criticalSignals = /critical|security vulnerability|breaking change|must fix|high.?risk/i;
-    if (criticalSignals.test(review))
-        return 'critical';
+    // Parse the explicit verdict line the prompt requests — most reliable signal
+    const verdictMatch = review.match(/\*\*Review Verdict:\*\*\s*(.+)/i);
+    if (verdictMatch) {
+        const v = verdictMatch[1].trim().toLowerCase();
+        if (v.includes('critical'))
+            return 'critical';
+        if (v.includes('needs work') || v.includes('needs-work'))
+            return 'needs-work';
+        if (v.includes('lgtm'))
+            return 'lgtm';
+    }
+    // Fallback heuristics — only trigger on affirmative critical signals, not
+    // negative mentions ("no critical issues", "there are no breaking changes")
+    for (const line of review.split('\n')) {
+        const lower = line.toLowerCase();
+        if (/\b(no|not|without|none|zero)\b/.test(lower))
+            continue;
+        if (/critical|security vulnerability|breaking change|must fix|high.?risk/.test(lower)) {
+            return 'critical';
+        }
+    }
     const securityCat = categories.find(c => /security/i.test(c.name));
     const bugsCat = categories.find(c => /bug|error|issue|fix/i.test(c.name));
     if ((securityCat && securityCat.count > 0) || (bugsCat && bugsCat.count > 0))

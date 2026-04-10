@@ -40,13 +40,17 @@ function buildAiClient(config: AiProviderConfig): AnthropicLike {
         baseURL: config.baseUrl,
       });
 
-    case 'bedrock':
+    case 'bedrock': {
       // AWS credentials fall back to environment variables / IAM role if not provided.
-      return new AnthropicBedrock({
-        ...(config.accessKeyId    ? { awsAccessKey: config.accessKeyId }    : {}),
-        ...(config.secretAccessKey ? { awsSecretKey: config.secretAccessKey } : {}),
-        awsRegion: config.region,
-      }) as unknown as AnthropicLike;
+      // Use separate constructor calls so TypeScript resolves each overload independently.
+      let bedrockClient: AnthropicBedrock;
+      if (config.accessKeyId && config.secretAccessKey) {
+        bedrockClient = new AnthropicBedrock({ awsAccessKey: config.accessKeyId, awsSecretKey: config.secretAccessKey, awsRegion: config.region });
+      } else {
+        bedrockClient = new AnthropicBedrock({ awsRegion: config.region });
+      }
+      return bedrockClient as unknown as AnthropicLike;
+    }
 
     case 'vertex':
       // GCP authentication uses Application Default Credentials (ADC).
