@@ -339,6 +339,87 @@
     .footer-links a { color: var(--muted); transition: color .15s; }
     .footer-links a:hover { color: var(--text); }
 
+    /* ── Configurator ── */
+    .configurator {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      align-items: start;
+    }
+
+    .cfg-form { display: flex; flex-direction: column; gap: 1.25rem; }
+
+    .cfg-group > label {
+      display: block;
+      font-size: 0.72rem; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--muted);
+      margin-bottom: .6rem;
+    }
+
+    .cfg-opts { display: flex; flex-wrap: wrap; gap: .4rem; }
+
+    .cfg-opt {
+      padding: 6px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--white);
+      color: var(--muted);
+      font-size: 0.82rem; font-weight: 600;
+      cursor: pointer; transition: all .15s;
+      font-family: inherit;
+    }
+    .cfg-opt.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+    .cfg-opt:hover:not(.on) { border-color: #94a3b8; color: var(--text); }
+
+    .cfg-input {
+      width: 100%; padding: 8px 12px;
+      border: 1px solid var(--border); border-radius: 8px;
+      font-size: 0.84rem; font-family: inherit;
+      background: var(--white); color: var(--text);
+      transition: border-color .15s;
+    }
+    .cfg-input:focus { outline: none; border-color: var(--navy); }
+    .cfg-input::placeholder { color: var(--muted); }
+
+    .cfg-output {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--white);
+      box-shadow: 0 4px 16px rgba(15,23,42,.06);
+      position: sticky; top: 80px;
+    }
+
+    .cfg-output-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px;
+      background: var(--gray); border-bottom: 1px solid var(--border);
+      font-size: 0.8rem; font-weight: 600; color: var(--muted);
+    }
+
+    .cfg-copy {
+      padding: 5px 14px;
+      border: 1px solid var(--border); border-radius: 6px;
+      font-size: 0.78rem; font-weight: 700;
+      background: var(--white); color: var(--text);
+      cursor: pointer; transition: all .15s; font-family: inherit;
+    }
+    .cfg-copy:hover { background: var(--navy); color: #fff; border-color: var(--navy); }
+    .cfg-copy.copied { background: var(--green); color: #fff; border-color: var(--green); }
+
+    #cfg-yaml-display {
+      padding: 1.5rem;
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+      font-size: 0.79rem; line-height: 1.8; color: var(--text);
+      white-space: pre; overflow-x: auto;
+      min-height: 320px;
+    }
+
+    @media (max-width: 800px) {
+      .configurator { grid-template-columns: 1fr; }
+      .cfg-output { position: static; }
+    }
+
     @media (max-width: 640px) {
       nav { padding: 0 1.25rem; }
       .nav-links { display: none; }
@@ -361,6 +442,7 @@
   <div class="nav-links">
     <a href="#features">Features</a>
     <a href="#providers">Providers</a>
+    <a href="#configurator">Configurator</a>
     <a href="#examples">Examples</a>
     <a href="https://github.com/subzone/ad-ai-pr-reviewer/blob/main/docs/USER_GUIDE.md" target="_blank">Docs</a>
     <a class="btn btn-ghost" href="https://github.com/subzone/ad-ai-pr-reviewer" target="_blank">GitHub</a>
@@ -502,6 +584,98 @@
         <h3>Open a PR, get a review</h3>
         <p>The pipeline fetches the diff, sends it to Claude, and posts a structured review comment on your PR automatically.</p>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Configurator ── -->
+<section id="configurator" class="bg-off">
+  <div class="container">
+    <div class="section-tag">Pipeline Configurator</div>
+    <h2>Build your pipeline YAML.<br />No guessing.</h2>
+    <p class="sub">Pick your providers, action, and options — get a ready-to-paste snippet.</p>
+
+    <div class="configurator">
+
+      <!-- Form -->
+      <div class="cfg-form">
+
+        <div class="cfg-group">
+          <label>Action</label>
+          <div class="cfg-opts">
+            <button class="cfg-opt on" onclick="pick('action','reviewPR',this)">Review PR</button>
+            <button class="cfg-opt" onclick="pick('action','createPR',this)">Create PR</button>
+            <button class="cfg-opt" onclick="pick('action','commentPR',this)">Post Comment</button>
+          </div>
+        </div>
+
+        <div class="cfg-group">
+          <label>Git host</label>
+          <div class="cfg-opts">
+            <button class="cfg-opt on" onclick="pick('git','github',this)">GitHub</button>
+            <button class="cfg-opt" onclick="pick('git','gitlab',this)">GitLab</button>
+            <button class="cfg-opt" onclick="pick('git','gitlab-self',this)">GitLab self-hosted</button>
+            <button class="cfg-opt" onclick="pick('git','bitbucket',this)">Bitbucket Cloud</button>
+            <button class="cfg-opt" onclick="pick('git','bitbucket-server',this)">Bitbucket Server</button>
+          </div>
+        </div>
+
+        <div id="cfg-ai-section">
+
+          <div class="cfg-group">
+            <label>AI provider</label>
+            <div class="cfg-opts">
+              <button class="cfg-opt on" onclick="pick('aiProvider','anthropic',this)">Anthropic</button>
+              <button class="cfg-opt" onclick="pick('aiProvider','azure',this)">Azure AI Foundry</button>
+              <button class="cfg-opt" onclick="pick('aiProvider','bedrock',this)">AWS Bedrock</button>
+              <button class="cfg-opt" onclick="pick('aiProvider','vertex',this)">Google Vertex</button>
+              <button class="cfg-opt" onclick="pick('aiProvider','litellm',this)">LiteLLM</button>
+            </div>
+          </div>
+
+          <div class="cfg-group">
+            <label>Model</label>
+            <div class="cfg-opts" id="opts-model"></div>
+            <input class="cfg-input" id="cfg-model-input" type="text"
+              style="display:none;margin-top:.5rem"
+              oninput="cfg.model=this.value;renderYaml()" />
+          </div>
+
+          <div class="cfg-group">
+            <label>Review mode</label>
+            <div class="cfg-opts">
+              <button class="cfg-opt on" onclick="pick('reviewMode','standard',this)">Standard — whole diff</button>
+              <button class="cfg-opt" onclick="pick('reviewMode','per-file',this)">Per-file + synthesis</button>
+            </div>
+          </div>
+
+          <div class="cfg-group">
+            <label>Review context <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+            <input class="cfg-input" id="cfg-context" type="text"
+              placeholder='e.g. Focus on security issues'
+              oninput="cfg.reviewContext=this.value;renderYaml()" />
+          </div>
+
+          <div class="cfg-group">
+            <label>Max diff lines <span style="font-weight:400;text-transform:none;letter-spacing:0">(default 500)</span></label>
+            <input class="cfg-input" id="cfg-maxdiff" type="number" value="500" min="50" max="5000"
+              oninput="cfg.maxDiff=this.value;renderYaml()" style="max-width:110px" />
+          </div>
+
+        </div><!-- /cfg-ai-section -->
+
+      </div><!-- /cfg-form -->
+
+      <!-- Output -->
+      <div class="cfg-output">
+        <div class="cfg-output-bar">
+          <span>pipeline.yml</span>
+          <button class="cfg-copy" id="cfg-copy-btn" onclick="copyYaml()">Copy</button>
+        </div>
+        <pre id="cfg-yaml-display"></pre>
+        <textarea id="cfg-yaml-plain" style="position:absolute;left:-9999px" aria-hidden="true"></textarea>
+      </div>
+
     </div>
   </div>
 </section>
@@ -700,6 +874,235 @@
     document.getElementById('tab-' + id).classList.add('active');
     el.classList.add('active');
   }
+
+  // ── Configurator ──
+  const cfg = {
+    action: 'reviewPR',
+    git: 'github',
+    aiProvider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    reviewMode: 'standard',
+    reviewContext: '',
+    maxDiff: '500'
+  };
+
+  const modelPresets = {
+    anthropic: [
+      { val: 'claude-sonnet-4-6',          label: 'Sonnet (recommended)' },
+      { val: 'claude-opus-4-6',             label: 'Opus (deepest)' },
+      { val: 'claude-haiku-4-5-20251001',   label: 'Haiku (fastest)' }
+    ],
+    azure:   null,
+    bedrock: [
+      { val: 'anthropic.claude-3-5-sonnet-20241022-v2:0', label: 'Claude 3.5 Sonnet' },
+      { val: 'anthropic.claude-3-opus-20240229-v1:0',     label: 'Claude 3 Opus' },
+      { val: 'anthropic.claude-3-haiku-20240307-v1:0',    label: 'Claude 3 Haiku' }
+    ],
+    vertex: [
+      { val: 'claude-sonnet-4-6', label: 'Sonnet (recommended)' },
+      { val: 'claude-opus-4-6',   label: 'Opus (deepest)' }
+    ],
+    litellm: null
+  };
+
+  const defaultModels = {
+    anthropic: 'claude-sonnet-4-6',
+    azure:     'claude-sonnet-4-6',
+    bedrock:   'anthropic.claude-3-5-sonnet-20241022-v2:0',
+    vertex:    'claude-sonnet-4-6',
+    litellm:   ''
+  };
+
+  function pick(field, val, el) {
+    cfg[field] = val;
+    el.closest('.cfg-opts').querySelectorAll('.cfg-opt').forEach(b => b.classList.remove('on'));
+    el.classList.add('on');
+    if (field === 'action') {
+      document.getElementById('cfg-ai-section').style.display = (val === 'commentPR') ? 'none' : '';
+    }
+    if (field === 'aiProvider') {
+      cfg.model = defaultModels[val];
+      renderModelUI();
+    }
+    renderYaml();
+  }
+
+  function renderModelUI() {
+    const presets = modelPresets[cfg.aiProvider];
+    const container = document.getElementById('opts-model');
+    const inp = document.getElementById('cfg-model-input');
+    if (!presets) {
+      container.innerHTML = '';
+      container.style.display = 'none';
+      inp.style.display = '';
+      inp.value = cfg.model;
+      inp.placeholder = cfg.aiProvider === 'azure'
+        ? 'Deployment name (e.g. claude-sonnet-4-6)'
+        : 'Model name or path';
+    } else {
+      container.style.display = '';
+      inp.style.display = 'none';
+      container.innerHTML = presets.map((m, i) =>
+        `<button class="cfg-opt${i === 0 ? ' on' : ''}" onclick="pick('model','${m.val}',this)">${m.label}</button>`
+      ).join('');
+      cfg.model = presets[0].val;
+    }
+  }
+
+  function gitProviderVal() {
+    return cfg.git === 'gitlab-self' ? 'gitlab'
+         : cfg.git === 'bitbucket-server' ? 'bitbucket-server'
+         : cfg.git;
+  }
+
+  function accessToken() {
+    const map = {
+      'github':           '$(GITHUB_PAT)',
+      'gitlab':           '$(GITLAB_PAT)',
+      'gitlab-self':      '$(GITLAB_PAT)',
+      'bitbucket':        '$(BITBUCKET_USERNAME):$(BITBUCKET_APP_PASSWORD)',
+      'bitbucket-server': '$(BITBUCKET_PAT)'
+    };
+    return map[cfg.git];
+  }
+
+  function secretsComment() {
+    const g = {
+      'github':           'GITHUB_PAT',
+      'gitlab':           'GITLAB_PAT',
+      'gitlab-self':      'GITLAB_PAT + GITLAB_SERVER_URL',
+      'bitbucket':        'BITBUCKET_USERNAME + BITBUCKET_APP_PASSWORD',
+      'bitbucket-server': 'BITBUCKET_PAT + BITBUCKET_SERVER_URL'
+    };
+    const a = {
+      'anthropic': 'ANTHROPIC_API_KEY',
+      'azure':     'AZURE_AI_API_KEY + AZURE_AI_ENDPOINT',
+      'bedrock':   'AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY',
+      'vertex':    'GCP_PROJECT_ID',
+      'litellm':   'LITELLM_API_KEY + LITELLM_BASE_URL'
+    };
+    let s = g[cfg.git] || '';
+    if (cfg.action !== 'commentPR') s += ' + ' + (a[cfg.aiProvider] || '');
+    return s;
+  }
+
+  function generateYaml() {
+    const { action, git, aiProvider, model, reviewMode, reviewContext, maxDiff } = cfg;
+    const L = [];
+
+    if (action === 'createPR') {
+      L.push('trigger:');
+      L.push('- feature/*');
+    } else {
+      L.push('trigger: none');
+      L.push('');
+      L.push('pr:');
+      L.push('  branches:');
+      L.push('    include: [main]');
+    }
+
+    L.push('');
+    L.push('variables:');
+    L.push(`- group: ai-reviewer-secrets   # ${secretsComment()}`);
+    L.push('');
+    L.push('pool:');
+    L.push('  vmImage: ubuntu-latest');
+    L.push('');
+    L.push('steps:');
+
+    const nameTag = action === 'createPR' ? '\n  name: CreatePR' : '';
+    L.push(`- task: AiPrReviewer@1${nameTag}`);
+    L.push('  inputs:');
+    L.push(`    action:      ${action}`);
+    L.push(`    provider:    ${gitProviderVal()}`);
+    L.push(`    accessToken: ${accessToken()}`);
+    L.push('    repository:  myorg/myrepo   # change this');
+
+    if (git === 'gitlab-self')      L.push('    serverUrl:   $(GITLAB_SERVER_URL)');
+    if (git === 'bitbucket-server') L.push('    serverUrl:   $(BITBUCKET_SERVER_URL)');
+
+    if (action === 'reviewPR') {
+      L.push('    prNumber:    $(System.PullRequest.PullRequestNumber)');
+    } else if (action === 'createPR') {
+      L.push('    sourceBranch: $(Build.SourceBranchName)');
+      L.push('    targetBranch: main');
+      L.push('    prTitle:     "$(Build.SourceBranchName): automated PR"');
+    } else {
+      L.push('    prNumber:    $(System.PullRequest.PullRequestNumber)');
+      L.push('    commentBody: |');
+      L.push('      Build **$(Build.BuildNumber)** passed');
+    }
+
+    if (action !== 'commentPR') {
+      L.push('    enableAiReview: true');
+      if (aiProvider !== 'anthropic') L.push(`    aiProvider:  ${aiProvider}`);
+
+      if (aiProvider === 'anthropic') {
+        L.push('    aiApiKey:    $(ANTHROPIC_API_KEY)');
+      } else if (aiProvider === 'azure') {
+        L.push('    aiApiKey:    $(AZURE_AI_API_KEY)');
+        L.push('    aiBaseUrl:   $(AZURE_AI_ENDPOINT)   # https://&lt;resource&gt;.services.ai.azure.com/models');
+      } else if (aiProvider === 'bedrock') {
+        L.push('    awsRegion:          us-east-1');
+        L.push('    awsAccessKeyId:     $(AWS_ACCESS_KEY_ID)      # omit for IAM role');
+        L.push('    awsSecretAccessKey: $(AWS_SECRET_ACCESS_KEY)  # omit for IAM role');
+      } else if (aiProvider === 'vertex') {
+        L.push('    gcpProjectId: $(GCP_PROJECT_ID)');
+        L.push('    gcpRegion:    us-east5');
+      } else if (aiProvider === 'litellm') {
+        L.push('    aiApiKey:    $(LITELLM_API_KEY)');
+        L.push('    aiBaseUrl:   $(LITELLM_BASE_URL)');
+      }
+
+      L.push(`    aiModel:     ${model || 'claude-sonnet-4-6'}`);
+      if (reviewMode === 'per-file') L.push('    aiReviewMode: per-file');
+      if (reviewContext)             L.push(`    aiReviewContext: "${reviewContext}"`);
+      if (maxDiff && maxDiff !== '500') L.push(`    aiMaxDiffLines: ${maxDiff}`);
+    }
+
+    return L.join('\n');
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function highlight(yaml) {
+    // Note: azure endpoint line already contains literal HTML entity &lt; — skip double-escaping it
+    let h = yaml.replace(/&(?!lt;|gt;|amp;)/g, '&amp;')
+               .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // Undo the double-escape for the already-encoded azure line
+    h = h.replace(/&amp;lt;/g, '&lt;').replace(/&amp;gt;/g, '&gt;');
+    // Keys (with optional leading "- ")
+    h = h.replace(/^(\s*(?:-\s+)?)([a-zA-Z][a-zA-Z0-9_-]*)(:)/gm,
+      '$1<span class="kw">$2$3</span>');
+    // Variables $(...)
+    h = h.replace(/(\$\([^)]+\))/g, '<span class="var">$1</span>');
+    // Inline comments (3+ spaces then #)
+    h = h.replace(/( {3,}#[^\n<]*)/g, '<span class="cmt">$1</span>');
+    return h;
+  }
+
+  function renderYaml() {
+    const yaml = generateYaml();
+    // Plain text for clipboard (strip the raw &lt;/&gt; we embedded for the azure line)
+    const plain = yaml.replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    document.getElementById('cfg-yaml-plain').value = plain;
+    document.getElementById('cfg-yaml-display').innerHTML = highlight(yaml);
+  }
+
+  function copyYaml() {
+    navigator.clipboard.writeText(document.getElementById('cfg-yaml-plain').value).then(() => {
+      const btn = document.getElementById('cfg-copy-btn');
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+    });
+  }
+
+  // Init
+  renderModelUI();
+  renderYaml();
 </script>
 
 </body>
