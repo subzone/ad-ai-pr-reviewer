@@ -61,30 +61,30 @@ In your Azure DevOps project:
 In your `azure-pipelines.yml`:
 
 ```yaml
-trigger:
-  - main
+trigger: none
+
+pr:
+  branches:
+    include: [main, develop]
 
 variables:
 - group: gitlab-secrets
 
-jobs:
-- job: CreateMergeRequest
-  pool:
-    vmImage: 'ubuntu-latest'
-  steps:
-  - task: AiPrReviewer@1
-    inputs:
-      action: createPR
-      provider: gitlab
-      accessToken: $(GITLAB_PAT)
-      repository: mygroup/myproject
-      sourceBranch: $(Build.SourceBranchName)
-      targetBranch: main
-      prTitle: $(Build.SourceBranchName)
-      serverUrl: $(GITLAB_SERVER_URL)  # Only needed for self-hosted
-      enableAiReview: true
-      aiApiKey: $(ANTHROPIC_API_KEY)
-      aiModel: claude-sonnet-4-6
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- task: AiPrReviewer@1
+  inputs:
+    action: reviewPR
+    provider: gitlab
+    accessToken: $(GITLAB_PAT)
+    repository: mygroup/myproject
+    prNumber: $(System.PullRequest.PullRequestNumber)
+    serverUrl: $(GITLAB_SERVER_URL)  # Only needed for self-hosted
+    enableAiReview: true
+    aiApiKey: $(ANTHROPIC_API_KEY)
+    aiModel: claude-sonnet-4-6
 ```
 
 ---
@@ -108,10 +108,11 @@ The repository name is **URL-encoded internally**, so special characters are han
 
 ```yaml
 inputs:
-  action: createPR
+  action: reviewPR
   provider: gitlab
   accessToken: $(GITLAB_PAT)
   repository: mygroup/myproject
+  prNumber: $(System.PullRequest.PullRequestNumber)
   # serverUrl: NOT NEEDED
 ```
 
@@ -119,10 +120,11 @@ inputs:
 
 ```yaml
 inputs:
-  action: createPR
+  action: reviewPR
   provider: gitlab
   accessToken: $(GITLAB_PAT)
   repository: mygroup/myproject
+  prNumber: $(System.PullRequest.PullRequestNumber)
   serverUrl: https://gitlab.mycompany.com
 ```
 

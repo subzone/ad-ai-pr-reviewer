@@ -91,22 +91,23 @@ For each credential variable:
 In your `azure-pipelines.yml`, add:
 
 ```yaml
-trigger:
-  - main
+trigger: none
+
+pr:
+  branches:
+    include: [main]
 
 variables:
 - group: pr-review-secrets   # Reference your variable group
 
 pool:
-  vmImage: 'ubuntu-latest'
+  vmImage: ubuntu-latest
 
-jobs:
-- job: ReviewPullRequests
-  steps:
-  - task: AiPrReviewer@1
-    inputs:
-      action: createPR
-      # ... more inputs (see examples below)
+steps:
+- task: AiPrReviewer@1
+  inputs:
+    action: reviewPR
+    # ... more inputs (see examples below)
 ```
 
 ---

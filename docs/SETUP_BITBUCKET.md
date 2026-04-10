@@ -44,16 +44,26 @@ In the variable group, add:
 ### Step 3: Use in Pipeline
 
 ```yaml
+trigger: none
+
+pr:
+  branches:
+    include: [main]
+
+variables:
+- group: bitbucket-secrets
+
+pool:
+  vmImage: ubuntu-latest
+
 steps:
 - task: AiPrReviewer@1
   inputs:
-    action: createPR
+    action: reviewPR
     provider: bitbucket
     accessToken: $(BITBUCKET_USERNAME):$(BITBUCKET_APP_PASSWORD)
     repository: myworkspace/myrepo
-    sourceBranch: $(Build.SourceBranchName)
-    targetBranch: main
-    prTitle: $(Build.SourceBranchName)
+    prNumber: $(System.PullRequest.PullRequestNumber)
     enableAiReview: true
     aiApiKey: $(ANTHROPIC_API_KEY)
     aiModel: claude-sonnet-4-6
@@ -95,17 +105,27 @@ In the variable group, add:
 ### Step 3: Use in Pipeline
 
 ```yaml
+trigger: none
+
+pr:
+  branches:
+    include: [main]
+
+variables:
+- group: bitbucket-server-secrets
+
+pool:
+  vmImage: ubuntu-latest
+
 steps:
 - task: AiPrReviewer@1
   inputs:
-    action: createPR
+    action: reviewPR
     provider: bitbucket-server
     accessToken: $(BITBUCKET_TOKEN)
     serverUrl: $(BITBUCKET_SERVER_URL)
     repository: MYPROJECT/myrepo
-    sourceBranch: $(Build.SourceBranchName)
-    targetBranch: main
-    prTitle: $(Build.SourceBranchName)
+    prNumber: $(System.PullRequest.PullRequestNumber)
     enableAiReview: true
     aiApiKey: $(ANTHROPIC_API_KEY)
     aiModel: claude-sonnet-4-6
