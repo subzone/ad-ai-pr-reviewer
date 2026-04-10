@@ -1,16 +1,15 @@
-# Test pipeline for ad-ai-pr-reviewer — runs on Azure DevOps.
+# Functional test pipeline for ad-ai-pr-reviewer — runs on Azure DevOps.
 #
-# PURPOSE: Validates the task code directly (no Marketplace install needed)
-#          by invoking the compiled Node script with manually set env vars.
-#          Use this to test against a real GitHub PR before publishing.
+# PURPOSE: Validates the task code end-to-end against this repo itself.
+#          Runs the compiled Node script directly (no Marketplace install needed).
 #
-# REQUIRED pipeline variables (set as secret):
-#   GITHUB_PAT         — GitHub PAT with repo + pull_requests read/write
+# REQUIRED pipeline variables (set as secret in ADO pipeline UI):
+#   GITHUB_PAT         — GitHub PAT with repo + pull_requests read/write scope
 #   ANTHROPIC_API_KEY  — Anthropic API key
 #
-# REQUIRED pipeline variables (plain):
-#   TEST_REPO          — GitHub repo to test against, e.g. myorg/myrepo
-#   TEST_PR_NUMBER     — An open PR number in that repo to run AI review on
+# OPTIONAL pipeline variables:
+#   TEST_PR_NUMBER     — An existing open PR number to run Job 1 against
+#                        (leave empty to skip Job 1)
 
 trigger: none   # manual only
 
@@ -18,17 +17,19 @@ pool:
   vmImage: ubuntu-latest
 
 variables:
-  TEST_REPO: ''         # set in ADO pipeline UI, e.g. subzone/some-test-repo
-  TEST_PR_NUMBER: ''    # set in ADO pipeline UI
+  TEST_REPO: milenkomitrovic/ad-ai-pr-reviewer
+  TEST_PR_NUMBER: ''    # set in ADO pipeline UI to test reviewPR on existing PR
   AI_MODEL: claude-sonnet-4-6
 
 stages:
   - stage: Test
     displayName: Test AI PR Reviewer task
     jobs:
-      # ── Job 1: post an AI review on an existing PR ────────────────────────
+
+      # ── Job 1: AI review an existing PR (optional) ────────────────────────
       - job: TestReviewPR
-        displayName: AI Review existing GitHub PR
+        displayName: AI Review existing PR
+        condition: ne(variables['TEST_PR_NUMBER'], '')
         steps:
           - checkout: self
 
@@ -45,12 +46,9 @@ stages:
             displayName: Build TypeScript
             workingDirectory: task
 
-          # Invoke the compiled task directly.
-          # azure-pipelines-task-lib reads inputs from INPUT_* env vars.
           - script: node task/dist/index.js
             displayName: Run task — reviewPR
             env:
-              # Task inputs
               INPUT_ACTION: reviewPR
               INPUT_PROVIDER: github
               INPUT_ACCESSTOKEN: $(GITHUB_PAT)
@@ -61,14 +59,13 @@ stages:
               INPUT_AIMODEL: $(AI_MODEL)
               INPUT_AIREVIEWCONTEXT: "This is a test run from Azure DevOps CI."
               INPUT_AIMAXDIFFLINES: "300"
-              # Required by azure-pipelines-task-lib
               AGENT_TEMPDIRECTORY: $(Agent.TempDirectory)
               SYSTEM_DEFAULTWORKINGDIRECTORY: $(System.DefaultWorkingDirectory)
 
-      # ── Job 2: create a PR then post AI review ────────────────────────────
+      # ── Job 2: create branch → commit → createPR → AI review → cleanup ───
       - job: TestCreateAndReview
-        displayName: Create PR + AI Review on GitHub
-        dependsOn: []   # run in parallel with Job 1
+        displayName: Create PR + AI Review + Cleanup
+        dependsOn: []
         variables:
           SOURCE_BRANCH: test/ado-ai-reviewer-$(Build.BuildId)
         steps:
@@ -87,13 +84,12 @@ stages:
             displayName: Build TypeScript
             workingDirectory: task
 
-          # Create a test branch on the target repo via GitHub API
           - script: |
               set -e
               REPO="$(TEST_REPO)"
               BRANCH="$(SOURCE_BRANCH)"
 
-              # Get default branch SHA
+              # Get main branch SHA
               SHA=$(curl -sf -H "Authorization: Bearer $GITHUB_PAT" \
                 "https://api.github.com/repos/$REPO/git/ref/heads/main" \
                 | jq -r '.object.sha')
@@ -105,16 +101,17 @@ stages:
                 "https://api.github.com/repos/$REPO/git/refs" \
                 -d "{\"ref\":\"refs/heads/$BRANCH\",\"sha\":\"$SHA\"}"
 
-              # Push a trivial commit so the branch has something to diff
-              CONTENT=$(echo "# ADO AI Reviewer test run $(Build.BuildId)" | base64 -w0)
+              # Push a trivial commit so the branch has a real diff
+              CONTENT=$(printf '# ADO AI Reviewer test\nBuild: %s\n' "$(Build.BuildId)" | base64 -w0)
               curl -sf -X PUT \
                 -H "Authorization: Bearer $GITHUB_PAT" \
                 -H "Content-Type: application/json" \
-                "https://api.github.com/repos/$REPO/contents/ado-test-$(Build.BuildId).md" \
+                "https://api.github.com/repos/$REPO/contents/test-artifacts/ado-test-$(Build.BuildId).md" \
                 -d "{\"message\":\"test: ADO AI reviewer run $(Build.BuildId)\",\"content\":\"$CONTENT\",\"branch\":\"$BRANCH\"}"
 
+              echo "##vso[task.setvariable variable=TEST_BRANCH]$BRANCH"
               echo "Test branch ready: $BRANCH"
-            displayName: Create test branch on GitHub
+            displayName: Create test branch + commit
             env:
               GITHUB_PAT: $(GITHUB_PAT)
 
@@ -132,16 +129,48 @@ stages:
               INPUT_PRDESCRIPTION: |
                 Automated test PR created by Azure DevOps pipeline to validate the AI PR Reviewer extension.
                 Build: $(Build.BuildNumber)
+
+                > This PR will be closed automatically after the test completes.
               INPUT_ENABLEAIREVIEW: true
               INPUT_AIAPIKEY: $(ANTHROPIC_API_KEY)
               INPUT_AIMODEL: $(AI_MODEL)
-              INPUT_AIREVIEWCONTEXT: "This is an automated test. Briefly acknowledge the change and confirm the review is working."
+              INPUT_AIREVIEWCONTEXT: "This is an automated functional test of the AI PR Reviewer ADO extension. Briefly acknowledge the change and confirm the review pipeline is working correctly."
               INPUT_AIMAXDIFFLINES: "100"
               INPUT_FAILONEXISTINGPR: false
               AGENT_TEMPDIRECTORY: $(Agent.TempDirectory)
               SYSTEM_DEFAULTWORKINGDIRECTORY: $(System.DefaultWorkingDirectory)
 
           - script: |
-              echo "PR URL:    $(PrUrl)"
-              echo "PR Number: $(PrNumber)"
+              echo "PR URL:    $(createPR.PrUrl)"
+              echo "PR Number: $(createPR.PrNumber)"
             displayName: Print created PR info
+
+          # Close test PR and delete branch to keep the repo clean
+          - script: |
+              set -e
+              REPO="$(TEST_REPO)"
+              PR_NUMBER="$(createPR.PrNumber)"
+              BRANCH="$(SOURCE_BRANCH)"
+
+              if [ -z "$PR_NUMBER" ]; then
+                echo "No PR number captured, skipping cleanup."
+                exit 0
+              fi
+
+              echo "Closing PR #$PR_NUMBER..."
+              curl -sf -X PATCH \
+                -H "Authorization: Bearer $GITHUB_PAT" \
+                -H "Content-Type: application/json" \
+                "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER" \
+                -d '{"state":"closed"}'
+
+              echo "Deleting branch $BRANCH..."
+              curl -sf -X DELETE \
+                -H "Authorization: Bearer $GITHUB_PAT" \
+                "https://api.github.com/repos/$REPO/git/refs/heads/$BRANCH"
+
+              echo "Cleanup done."
+            displayName: Close PR + delete test branch
+            condition: always()
+            env:
+              GITHUB_PAT: $(GITHUB_PAT)
