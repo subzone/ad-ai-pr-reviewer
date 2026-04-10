@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI PR Reviewer — Azure DevOps Extension</title>
+  <meta name="description" content="Automatic AI code reviews on GitHub, GitLab &amp; Bitbucket — triggered directly from Azure DevOps pipelines. No extra servers, no webhooks." />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #1e2430;
+      --border: #30363d;
+      --accent: #7c3aed;
+      --accent2: #2563eb;
+      --green: #16a34a;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --code-bg: #13161f;
+      --radius: 10px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    /* ── Nav ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 2rem; height: 60px;
+      background: rgba(13,17,23,0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-logo {
+      display: flex; align-items: center; gap: 10px;
+      font-weight: 700; font-size: 1rem;
+    }
+
+    .nav-logo img { width: 28px; height: 28px; border-radius: 6px; }
+
+    .nav-links { display: flex; align-items: center; gap: 1.5rem; font-size: 0.9rem; }
+
+    .nav-links a { color: var(--muted); transition: color .2s; }
+    .nav-links a:hover { color: var(--text); }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 16px; border-radius: 6px; font-size: 0.875rem;
+      font-weight: 600; cursor: pointer; transition: opacity .2s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-outline { border: 1px solid var(--border); color: var(--text); }
+    .btn-lg { padding: 12px 24px; font-size: 1rem; border-radius: 8px; }
+
+    /* ── Hero ── */
+    .hero {
+      text-align: center;
+      padding: 100px 2rem 80px;
+      background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(124,58,237,.18) 0%, transparent 70%);
+    }
+
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 5px 14px; border-radius: 20px;
+      border: 1px solid rgba(124,58,237,.4);
+      background: rgba(124,58,237,.1);
+      font-size: 0.8rem; color: #a78bfa;
+      margin-bottom: 2rem;
+    }
+
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 800; line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin-bottom: 1.25rem;
+    }
+
+    .hero h1 span {
+      background: linear-gradient(135deg, #a78bfa 0%, #60a5fa 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero p {
+      font-size: 1.15rem; color: var(--muted);
+      max-width: 560px; margin: 0 auto 2.5rem;
+    }
+
+    .hero-ctas { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+
+    /* ── Section ── */
+    section { padding: 80px 2rem; }
+    .container { max-width: 1100px; margin: 0 auto; }
+
+    .section-label {
+      font-size: 0.8rem; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: #a78bfa;
+      margin-bottom: .75rem;
+    }
+
+    .section-title {
+      font-size: clamp(1.5rem, 3vw, 2.2rem);
+      font-weight: 700; margin-bottom: 1rem;
+    }
+
+    .section-sub { color: var(--muted); max-width: 560px; margin-bottom: 3rem; }
+
+    /* ── Features ── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      transition: border-color .2s;
+    }
+    .feature-card:hover { border-color: rgba(124,58,237,.5); }
+
+    .feature-icon {
+      width: 40px; height: 40px; border-radius: 8px;
+      background: rgba(124,58,237,.15);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem; margin-bottom: 1rem;
+    }
+
+    .feature-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: .4rem; }
+    .feature-card p { font-size: 0.875rem; color: var(--muted); }
+
+    /* ── Providers ── */
+    .providers-section { background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+
+    .providers-row {
+      display: flex; flex-wrap: wrap; gap: 2rem;
+      align-items: flex-start; justify-content: space-between;
+    }
+
+    .provider-group { min-width: 200px; }
+    .provider-group h3 { font-size: 0.8rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 1rem; }
+
+    .provider-pills { display: flex; flex-wrap: wrap; gap: .5rem; }
+
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      font-size: 0.83rem; font-weight: 500;
+    }
+
+    /* ── Steps ── */
+    .steps { display: flex; flex-direction: column; gap: 1.5rem; }
+
+    .step {
+      display: flex; gap: 1.5rem; align-items: flex-start;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1.5rem;
+    }
+
+    .step-num {
+      flex-shrink: 0;
+      width: 36px; height: 36px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 0.9rem;
+    }
+
+    .step h3 { font-size: 1rem; font-weight: 700; margin-bottom: .3rem; }
+    .step p { font-size: 0.875rem; color: var(--muted); }
+
+    /* ── Code ── */
+    .code-section { background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+
+    .code-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 0; overflow-x: auto; }
+
+    .code-tab {
+      padding: 10px 18px; font-size: 0.83rem; font-weight: 600;
+      color: var(--muted); cursor: pointer;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
+    }
+    .code-tab.active { color: #a78bfa; border-bottom-color: #a78bfa; }
+
+    .code-block {
+      display: none;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-top: none;
+      border-radius: 0 0 var(--radius) var(--radius);
+      padding: 1.5rem;
+      overflow-x: auto;
+    }
+    .code-block.active { display: block; }
+
+    pre {
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+      font-size: 0.83rem; line-height: 1.7; color: #e6edf3;
+    }
+
+    .kw  { color: #ff7b72; }   /* keywords */
+    .str { color: #a5d6ff; }   /* strings */
+    .cmt { color: #8b949e; }   /* comments */
+    .key { color: #79c0ff; }   /* yaml keys */
+    .val { color: #a5d6ff; }   /* yaml values */
+    .var { color: #ffa657; }   /* variables */
+
+    .code-wrapper {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    /* ── Output vars ── */
+    .vars-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+
+    .var-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1.25rem;
+    }
+
+    .var-name {
+      font-family: 'SF Mono', Consolas, monospace;
+      font-size: 0.83rem; color: #a78bfa; font-weight: 600;
+      margin-bottom: .3rem;
+    }
+    .var-card p { font-size: 0.8rem; color: var(--muted); }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2.5rem 2rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.875rem;
+    }
+    footer a { color: #a78bfa; }
+    footer a:hover { text-decoration: underline; }
+    .footer-links { display: flex; justify-content: center; gap: 1.5rem; margin-top: .75rem; flex-wrap: wrap; }
+
+    @media (max-width: 640px) {
+      .hero { padding: 70px 1.25rem 60px; }
+      section { padding: 60px 1.25rem; }
+      .providers-row { flex-direction: column; }
+      nav { padding: 0 1.25rem; }
+      .nav-links { gap: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Nav ── -->
+<nav>
+  <div class="nav-logo">
+    <img src="images/extension-icon.png" alt="AI PR Reviewer icon" />
+    AI PR Reviewer
+  </div>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#how-it-works">How it works</a>
+    <a href="#examples">Examples</a>
+    <a href="https://github.com/subzone/ad-ai-pr-reviewer" target="_blank">GitHub</a>
+    <a class="btn btn-primary" href="https://marketplace.visualstudio.com/items?itemName=subzone.ad-ai-pr-reviewer" target="_blank">Install free</a>
+  </div>
+</nav>
+
+<!-- ── Hero ── -->
+<section class="hero">
+  <div class="hero-badge">✦ Azure DevOps Marketplace Extension</div>
+  <h1>AI code reviews on<br /><span>every pull request</span></h1>
+  <p>Automatic Claude-powered reviews on GitHub, GitLab &amp; Bitbucket — triggered directly from your Azure DevOps pipelines. No extra servers. No webhooks.</p>
+  <div class="hero-ctas">
+    <a class="btn btn-primary btn-lg" href="https://marketplace.visualstudio.com/items?itemName=subzone.ad-ai-pr-reviewer" target="_blank">
+      Install from Marketplace
+    </a>
+    <a class="btn btn-outline btn-lg" href="https://github.com/subzone/ad-ai-pr-reviewer" target="_blank">
+      View on GitHub
+    </a>
+  </div>
+</section>
+
+<!-- ── Features ── -->
+<section id="features">
+  <div class="container">
+    <div class="section-label">Features</div>
+    <h2 class="section-title">Everything you need in one task</h2>
+    <p class="section-sub">Three actions, five AI providers, all major git hosts — configured in a single YAML block.</p>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🤖</div>
+        <h3>AI code review</h3>
+        <p>Claude reviews your diff and posts a structured comment — bugs, security issues, performance, and style — directly on the PR.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📂</div>
+        <h3>Per-file mode</h3>
+        <p>Review each changed file individually then synthesise findings into one clear PR-level assessment. Better signal on large diffs.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔀</div>
+        <h3>Create pull requests</h3>
+        <p>Open a PR on any git host directly from your pipeline. Detects existing PRs, sets output variables for downstream steps.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">💬</div>
+        <h3>Post comments</h3>
+        <p>Post custom comments on any PR — build results, test coverage, deployment status — tagged and formatted automatically.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🌐</div>
+        <h3>Multiple AI providers</h3>
+        <p>Run Claude on Anthropic, Azure AI Foundry, AWS Bedrock, Google Vertex AI, or your own LiteLLM proxy.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📊</div>
+        <h3>Output variables</h3>
+        <p>Expose <code>ReviewVerdict</code>, <code>ReviewTotalIssues</code>, and <code>ReviewSummary</code> for downstream gates and notifications.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Providers ── -->
+<section class="providers-section">
+  <div class="container">
+    <div class="providers-row">
+      <div class="provider-group">
+        <h3>Git hosts</h3>
+        <div class="provider-pills">
+          <span class="pill">🐙 GitHub</span>
+          <span class="pill">🦊 GitLab</span>
+          <span class="pill">🪣 Bitbucket Cloud</span>
+          <span class="pill">🏢 Bitbucket Server</span>
+          <span class="pill">🐙 GitHub Enterprise</span>
+          <span class="pill">🦊 GitLab self-hosted</span>
+        </div>
+      </div>
+      <div class="provider-group">
+        <h3>AI providers</h3>
+        <div class="provider-pills">
+          <span class="pill">🟠 Anthropic (direct)</span>
+          <span class="pill">☁️ Azure AI Foundry</span>
+          <span class="pill">🟡 AWS Bedrock</span>
+          <span class="pill">🔵 Google Vertex AI</span>
+          <span class="pill">⚡ LiteLLM proxy</span>
+        </div>
+      </div>
+      <div class="provider-group">
+        <h3>Claude models</h3>
+        <div class="provider-pills">
+          <span class="pill">🚀 Haiku — fast &amp; cheap</span>
+          <span class="pill">⚖️ Sonnet — recommended</span>
+          <span class="pill">🔍 Opus — deep review</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── How it works ── -->
+<section id="how-it-works">
+  <div class="container">
+    <div class="section-label">How it works</div>
+    <h2 class="section-title">Up and running in 3 steps</h2>
+    <p class="section-sub">No extra infrastructure. No webhooks. Just YAML.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div>
+          <h3>Store your secrets</h3>
+          <p>Add your git host token and Anthropic API key (or cloud provider credentials) to an Azure DevOps variable group. Mark both as secret.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div>
+          <h3>Add the task to your pipeline</h3>
+          <p>Drop <code>AiPrReviewer@1</code> into any pipeline YAML. Set <code>action: reviewPR</code>, point it at your repo, and enable <code>enableAiReview: true</code>.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div>
+          <h3>Open a pull request</h3>
+          <p>The pipeline triggers, fetches the diff, sends it to Claude, and posts a structured review comment on your PR — automatically.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Code examples ── -->
+<section class="code-section" id="examples">
+  <div class="container">
+    <div class="section-label">Examples</div>
+    <h2 class="section-title">Ready-to-use pipeline YAML</h2>
+    <p class="section-sub">Copy, update the repository name, and you're done.</p>
+
+    <div class="code-wrapper">
+      <div class="code-tabs">
+        <div class="code-tab active" onclick="showTab('github', this)">GitHub</div>
+        <div class="code-tab" onclick="showTab('gitlab', this)">GitLab</div>
+        <div class="code-tab" onclick="showTab('bitbucket', this)">Bitbucket</div>
+        <div class="code-tab" onclick="showTab('azure', this)">Azure AI Foundry</div>
+        <div class="code-tab" onclick="showTab('bedrock', this)">AWS Bedrock</div>
+      </div>
+
+      <div class="code-block active" id="tab-github">
+<pre><span class="key">trigger</span>: <span class="val">none</span>
+
+<span class="key">pr</span>:
+  <span class="key">branches</span>:
+    <span class="key">include</span>: <span class="val">[main]</span>
+
+<span class="key">variables</span>:
+- <span class="key">group</span>: <span class="val">ai-reviewer-secrets</span>   <span class="cmt"># GITHUB_PAT + ANTHROPIC_API_KEY</span>
+
+<span class="key">pool</span>:
+  <span class="key">vmImage</span>: <span class="val">ubuntu-latest</span>
+
+<span class="key">steps</span>:
+- <span class="key">task</span>: <span class="val">AiPrReviewer@1</span>
+  <span class="key">inputs</span>:
+    <span class="key">action</span>: <span class="val">reviewPR</span>
+    <span class="key">provider</span>: <span class="val">github</span>
+    <span class="key">accessToken</span>: <span class="var">$(GITHUB_PAT)</span>
+    <span class="key">repository</span>: <span class="val">myorg/myrepo</span>        <span class="cmt"># ← change this</span>
+    <span class="key">prNumber</span>: <span class="var">$(System.PullRequest.PullRequestNumber)</span>
+    <span class="key">enableAiReview</span>: <span class="val">true</span>
+    <span class="key">aiApiKey</span>: <span class="var">$(ANTHROPIC_API_KEY)</span>
+    <span class="key">aiModel</span>: <span class="val">claude-sonnet-4-6</span></pre>
+      </div>
+
+      <div class="code-block" id="tab-gitlab">
+<pre><span class="key">trigger</span>: <span class="val">none</span>
+
+<span class="key">pr</span>:
+  <span class="key">branches</span>:
+    <span class="key">include</span>: <span class="val">[main]</span>
+
+<span class="key">variables</span>:
+- <span class="key">group</span>: <span class="val">ai-reviewer-secrets</span>   <span class="cmt"># GITLAB_PAT + ANTHROPIC_API_KEY</span>
+
+<span class="key">pool</span>:
+  <span class="key">vmImage</span>: <span class="val">ubuntu-latest</span>
+
+<span class="key">steps</span>:
+- <span class="key">task</span>: <span class="val">AiPrReviewer@1</span>
+  <span class="key">inputs</span>:
+    <span class="key">action</span>: <span class="val">reviewPR</span>
+    <span class="key">provider</span>: <span class="val">gitlab</span>
+    <span class="key">accessToken</span>: <span class="var">$(GITLAB_PAT)</span>
+    <span class="key">repository</span>: <span class="val">mygroup/myproject</span>   <span class="cmt"># ← change this</span>
+    <span class="cmt">    # serverUrl: https://gitlab.mycompany.com  # self-hosted only</span>
+    <span class="key">prNumber</span>: <span class="var">$(System.PullRequest.PullRequestNumber)</span>
+    <span class="key">enableAiReview</span>: <span class="val">true</span>
+    <span class="key">aiApiKey</span>: <span class="var">$(ANTHROPIC_API_KEY)</span>
+    <span class="key">aiModel</span>: <span class="val">claude-sonnet-4-6</span></pre>
+      </div>
+
+      <div class="code-block" id="tab-bitbucket">
+<pre><span class="key">trigger</span>: <span class="val">none</span>
+
+<span class="key">pr</span>:
+  <span class="key">branches</span>:
+    <span class="key">include</span>: <span class="val">[main]</span>
+
+<span class="key">variables</span>:
+- <span class="key">group</span>: <span class="val">ai-reviewer-secrets</span>   <span class="cmt"># BITBUCKET_USERNAME + BITBUCKET_APP_PASSWORD + ANTHROPIC_API_KEY</span>
+
+<span class="key">pool</span>:
+  <span class="key">vmImage</span>: <span class="val">ubuntu-latest</span>
+
+<span class="key">steps</span>:
+- <span class="key">task</span>: <span class="val">AiPrReviewer@1</span>
+  <span class="key">inputs</span>:
+    <span class="key">action</span>: <span class="val">reviewPR</span>
+    <span class="key">provider</span>: <span class="val">bitbucket</span>
+    <span class="key">accessToken</span>: <span class="var">$(BITBUCKET_USERNAME)</span>:<span class="var">$(BITBUCKET_APP_PASSWORD)</span>
+    <span class="key">repository</span>: <span class="val">myworkspace/myrepo</span>  <span class="cmt"># ← change this</span>
+    <span class="key">prNumber</span>: <span class="var">$(System.PullRequest.PullRequestNumber)</span>
+    <span class="key">enableAiReview</span>: <span class="val">true</span>
+    <span class="key">aiApiKey</span>: <span class="var">$(ANTHROPIC_API_KEY)</span>
+    <span class="key">aiModel</span>: <span class="val">claude-sonnet-4-6</span></pre>
+      </div>
+
+      <div class="code-block" id="tab-azure">
+<pre><span class="key">steps</span>:
+- <span class="key">task</span>: <span class="val">AiPrReviewer@1</span>
+  <span class="key">inputs</span>:
+    <span class="key">action</span>: <span class="val">reviewPR</span>
+    <span class="key">provider</span>: <span class="val">github</span>
+    <span class="key">accessToken</span>: <span class="var">$(GITHUB_PAT)</span>
+    <span class="key">repository</span>: <span class="val">myorg/myrepo</span>
+    <span class="key">prNumber</span>: <span class="var">$(System.PullRequest.PullRequestNumber)</span>
+    <span class="key">enableAiReview</span>: <span class="val">true</span>
+    <span class="key">aiProvider</span>: <span class="val">azure</span>
+    <span class="key">aiApiKey</span>: <span class="var">$(AZURE_AI_API_KEY)</span>
+    <span class="key">aiBaseUrl</span>: <span class="var">$(AZURE_AI_ENDPOINT)</span>   <span class="cmt"># https://&lt;resource&gt;.services.ai.azure.com/models</span>
+    <span class="key">aiModel</span>: <span class="val">claude-sonnet-4-6</span>         <span class="cmt"># your deployment name</span></pre>
+      </div>
+
+      <div class="code-block" id="tab-bedrock">
+<pre><span class="key">steps</span>:
+- <span class="key">task</span>: <span class="val">AiPrReviewer@1</span>
+  <span class="key">inputs</span>:
+    <span class="key">action</span>: <span class="val">reviewPR</span>
+    <span class="key">provider</span>: <span class="val">github</span>
+    <span class="key">accessToken</span>: <span class="var">$(GITHUB_PAT)</span>
+    <span class="key">repository</span>: <span class="val">myorg/myrepo</span>
+    <span class="key">prNumber</span>: <span class="var">$(System.PullRequest.PullRequestNumber)</span>
+    <span class="key">enableAiReview</span>: <span class="val">true</span>
+    <span class="key">aiProvider</span>: <span class="val">bedrock</span>
+    <span class="key">awsRegion</span>: <span class="val">us-east-1</span>
+    <span class="key">awsAccessKeyId</span>: <span class="var">$(AWS_ACCESS_KEY_ID)</span>      <span class="cmt"># omit to use IAM role</span>
+    <span class="key">awsSecretAccessKey</span>: <span class="var">$(AWS_SECRET_ACCESS_KEY)</span>  <span class="cmt"># omit to use IAM role</span>
+    <span class="key">aiModel</span>: <span class="val">anthropic.claude-3-5-sonnet-20241022-v2:0</span></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Output vars ── -->
+<section>
+  <div class="container">
+    <div class="section-label">Output variables</div>
+    <h2 class="section-title">Use review results downstream</h2>
+    <p class="section-sub">Gate deployments, trigger notifications, or log results based on the AI verdict.</p>
+
+    <div class="vars-grid">
+      <div class="var-card">
+        <div class="var-name">PrUrl</div>
+        <p>Full URL to the pull request</p>
+      </div>
+      <div class="var-card">
+        <div class="var-name">PrNumber</div>
+        <p>Numeric PR / MR identifier</p>
+      </div>
+      <div class="var-card">
+        <div class="var-name">ReviewVerdict</div>
+        <p><code>lgtm</code> · <code>needs-work</code> · <code>critical</code></p>
+      </div>
+      <div class="var-card">
+        <div class="var-name">ReviewTotalIssues</div>
+        <p>Number of issues found by Claude</p>
+      </div>
+      <div class="var-card">
+        <div class="var-name">ReviewSummary</div>
+        <p>One-line summary from the AI review</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Footer ── -->
+<footer>
+  <div>Built by <a href="https://github.com/subzone" target="_blank">subzone</a> · Powered by <a href="https://anthropic.com" target="_blank">Anthropic Claude</a> · MIT License</div>
+  <div class="footer-links">
+    <a href="https://marketplace.visualstudio.com/items?itemName=subzone.ad-ai-pr-reviewer" target="_blank">Marketplace</a>
+    <a href="https://github.com/subzone/ad-ai-pr-reviewer" target="_blank">GitHub</a>
+    <a href="https://github.com/subzone/ad-ai-pr-reviewer/blob/main/docs/USER_GUIDE.md" target="_blank">User Guide</a>
+    <a href="https://github.com/subzone/ad-ai-pr-reviewer/blob/main/docs/TROUBLESHOOTING.md" target="_blank">Troubleshooting</a>
+    <a href="https://github.com/subzone/ad-ai-pr-reviewer/issues" target="_blank">Report an issue</a>
+  </div>
+</footer>
+
+<script>
+  function showTab(id, el) {
+    document.querySelectorAll('.code-block').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.code-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + id).classList.add('active');
+    el.classList.add('active');
+  }
+</script>
+
+</body>
+</html>
