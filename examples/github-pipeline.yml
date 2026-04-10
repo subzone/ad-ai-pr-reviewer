@@ -1,0 +1,90 @@
+# Azure DevOps pipeline — GitHub repository integration
+#
+# SCENARIO: Your source code lives on GitHub. This ADO pipeline runs on
+# every feature/fix branch push, creates a PR against main, posts an AI
+# review, then comments with the build result.
+#
+# REQUIRED pipeline variables (mark as secret in ADO):
+#   GITHUB_PAT         — GitHub PAT with `repo` scope
+#   ANTHROPIC_API_KEY  — Anthropic API key
+#
+# HOW TO USE:
+#   1. Copy this file into your repo at any path (e.g. .ado/pr-pipeline.yml)
+#   2. In ADO: New Pipeline → GitHub → your repo → Existing YAML file
+#   3. Set the two secret variables above in the pipeline settings
+#   4. Push a feature branch → pipeline runs automatically
+
+trigger:
+  branches:
+    include:
+      - feature/*
+      - fix/*
+      - hotfix/*
+
+pr: none  # this pipeline IS the PR creation step, don't run on PRs
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  TARGET_REPO: myorg/myrepo        # replace with your GitHub org/repo
+  TARGET_BRANCH: main
+  AI_MODEL: claude-sonnet-4-6     # or claude-opus-4-6, claude-haiku-4-5-20251001
+
+stages:
+  - stage: PullRequest
+    displayName: Create PR + AI Review
+    jobs:
+      - job: CreateAndReview
+        displayName: Open PR on GitHub with AI review
+        steps:
+
+          # Step 1: Create the PR and immediately post an AI review comment
+          - task: AiPrReviewer@1
+            displayName: Create PR + AI Review
+            inputs:
+              action: createPR
+              provider: github
+              accessToken: $(GITHUB_PAT)
+              repository: $(TARGET_REPO)
+              sourceBranch: $(Build.SourceBranchName)
+              targetBranch: $(TARGET_BRANCH)
+              prTitle: "$(Build.SourceBranchName)"
+              prDescription: |
+                Automated PR created by Azure DevOps.
+                **Build:** $(Build.BuildNumber)
+                **Triggered by:** $(Build.RequestedFor)
+              enableAiReview: true
+              aiApiKey: $(ANTHROPIC_API_KEY)
+              aiModel: $(AI_MODEL)
+              aiReviewContext: |
+                Focus on: correctness, security vulnerabilities, and breaking API changes.
+                Flag any hardcoded credentials or sensitive data.
+              aiMaxDiffLines: 500
+              failOnExistingPR: false   # reuse PR if branch was already pushed
+
+          # Step 2: Print the PR link to the pipeline log
+          - script: |
+              echo "PR created: $(PrUrl)"
+              echo "PR number:  $(PrNumber)"
+            displayName: Print PR info
+
+          # Step 3: After tests/build, post a follow-up status comment
+          - task: AiPrReviewer@1
+            displayName: Post build result comment
+            condition: always()   # run even if previous steps failed
+            inputs:
+              action: commentPR
+              provider: github
+              accessToken: $(GITHUB_PAT)
+              repository: $(TARGET_REPO)
+              prNumber: $(PrNumber)
+              commentBody: |
+                ## Build Result: $(Agent.JobStatus)
+
+                | | |
+                |---|---|
+                | **Build** | $(Build.BuildNumber) |
+                | **Branch** | $(Build.SourceBranchName) |
+                | **Status** | $(Agent.JobStatus) |
+                | **Pipeline** | [View run]($(System.TeamFoundationCollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)) |

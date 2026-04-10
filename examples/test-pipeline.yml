@@ -181,34 +181,6 @@ stages:
             name: createPR
 
           - script: |
-              PR_URL="$(PrUrl)"
-              PR_NUMBER="$(PrNumber)"
-              REPO="$(TEST_REPO)"
-              BRANCH="$(SOURCE_BRANCH)"
-
-              echo "PR URL:    $PR_URL"
-              echo "PR Number: $PR_NUMBER"
-
-              # Write summary card shown in ADO pipeline run
-              SUMMARY="$AGENT_TEMPDIRECTORY/pr-summary.md"
-              cat > "$SUMMARY" << EOF
-              ## AI PR Reviewer — Test Result
-
-              | | |
-              |---|---|
-              | **PR** | [#$PR_NUMBER — View on GitHub]($PR_URL) |
-              | **Repository** | $REPO |
-              | **Branch** | $BRANCH |
-              | **Model** | $(AI_MODEL) |
-              | **Build** | $(Build.BuildNumber) |
-              EOF
-
-              echo "##vso[build.uploadsummary]$SUMMARY"
-            displayName: Print created PR info
-            env:
-              AGENT_TEMPDIRECTORY: $(Agent.TempDirectory)
-
-          - script: |
               export INPUT_ACTION="reviewPR"
               export INPUT_PROVIDER="github"
               export INPUT_ACCESSTOKEN="$(GITHUB_PAT)"
@@ -224,6 +196,43 @@ stages:
 
               node task/dist/index.js
             displayName: Run task — reviewPR
+
+          - script: |
+              PR_URL="$(PrUrl)"
+              PR_NUMBER="$(PrNumber)"
+              VERDICT="$(ReviewVerdict)"
+              SUMMARY="$(ReviewSummary)"
+              TOTAL="$(ReviewTotalIssues)"
+
+              case "$VERDICT" in
+                lgtm)       BADGE="✅ LGTM" ;;
+                needs-work) BADGE="⚠️ Needs Work" ;;
+                critical)   BADGE="🚨 Critical Issues" ;;
+                *)          BADGE="🔍 Reviewed" ;;
+              esac
+
+              SUMMARY_FILE="$AGENT_TEMPDIRECTORY/pr-summary.md"
+              cat > "$SUMMARY_FILE" << EOF
+              ## AI PR Review — $BADGE
+
+              > $SUMMARY
+
+              | | |
+              |---|---|
+              | **PR** | [#$PR_NUMBER — View on GitHub]($PR_URL) |
+              | **Verdict** | $BADGE |
+              | **Total Issues** | $TOTAL |
+              | **Repository** | $(TEST_REPO) |
+              | **Branch** | $(SOURCE_BRANCH) |
+              | **Model** | $(AI_MODEL) |
+              | **Build** | $(Build.BuildNumber) |
+              EOF
+
+              echo "##vso[build.uploadsummary]$SUMMARY_FILE"
+            displayName: Publish summary to ADO
+            condition: always()
+            env:
+              AGENT_TEMPDIRECTORY: $(Agent.TempDirectory)
 
           # Close test PR and delete branch to keep the repo clean
           - script: |

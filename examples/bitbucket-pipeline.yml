@@ -1,0 +1,114 @@
+# Azure DevOps pipeline — Bitbucket repository integration
+#
+# SCENARIO: Your source code lives on Bitbucket Cloud or Bitbucket Server
+# (Data Center). This ADO pipeline creates a PR, posts an AI review, and
+# comments with the build result.
+#
+# REQUIRED pipeline variables (mark as secret in ADO):
+#
+#   For Bitbucket Cloud:
+#     BITBUCKET_APP_PASSWORD  — App Password (username:app_password format)
+#                               Go to: Bitbucket → Personal settings → App passwords
+#                               Required permissions: Repositories (read), Pull requests (read/write)
+#
+#   For Bitbucket Server / Data Center:
+#     BITBUCKET_PAT           — Personal Access Token from your Bitbucket Server
+#                               Go to: Profile → Manage account → Personal access tokens
+#     BITBUCKET_SERVER_URL    — Your server URL, e.g. https://bitbucket.mycompany.com
+#
+#   For both:
+#     ANTHROPIC_API_KEY       — Anthropic API key
+#
+# HOW TO USE:
+#   1. Copy this file into your repo at any path (e.g. .ado/pr-pipeline.yml)
+#   2. Update TARGET_REPO and PROVIDER below for your setup
+#   3. In ADO: New Pipeline → Bitbucket Cloud → your repo → Existing YAML file
+#   4. Set the secret variables above in pipeline settings
+#   5. Push a feature branch → pipeline runs automatically
+
+trigger:
+  branches:
+    include:
+      - feature/*
+      - fix/*
+      - hotfix/*
+
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  TARGET_BRANCH: main
+  AI_MODEL: claude-sonnet-4-6
+
+  # ── Bitbucket Cloud ──────────────────────────────────────────────────────────
+  # PROVIDER: bitbucket
+  # TARGET_REPO: myworkspace/myrepo   # Bitbucket workspace/repo slug
+  # ACCESS_TOKEN: $(BITBUCKET_APP_PASSWORD)   # format: username:app_password
+
+  # ── Bitbucket Server / Data Center ──────────────────────────────────────────
+  PROVIDER: bitbucket-server
+  TARGET_REPO: MYPROJECT/myrepo      # Project key/repo slug (project key is UPPERCASE)
+  ACCESS_TOKEN: $(BITBUCKET_PAT)
+  SERVER_URL: $(BITBUCKET_SERVER_URL)  # e.g. https://bitbucket.mycompany.com
+
+stages:
+  - stage: PullRequest
+    displayName: Create PR + AI Review
+    jobs:
+      - job: CreateAndReview
+        displayName: Open PR on Bitbucket with AI review
+        steps:
+
+          # Step 1: Create the PR and post AI review
+          - task: AiPrReviewer@1
+            displayName: Create PR + AI Review
+            inputs:
+              action: createPR
+              provider: $(PROVIDER)
+              accessToken: $(ACCESS_TOKEN)
+              repository: $(TARGET_REPO)
+              serverUrl: $(SERVER_URL)         # ignored for Bitbucket Cloud
+              sourceBranch: $(Build.SourceBranchName)
+              targetBranch: $(TARGET_BRANCH)
+              prTitle: "$(Build.SourceBranchName)"
+              prDescription: |
+                Automated PR created by Azure DevOps.
+                **Build:** $(Build.BuildNumber)
+                **Triggered by:** $(Build.RequestedFor)
+              enableAiReview: true
+              aiApiKey: $(ANTHROPIC_API_KEY)
+              aiModel: $(AI_MODEL)
+              aiReviewContext: |
+                Focus on: correctness, security vulnerabilities, and performance issues.
+                Flag any hardcoded credentials or sensitive data.
+              aiMaxDiffLines: 500
+              failOnExistingPR: false
+
+          # Step 2: Print the PR link
+          - script: |
+              echo "PR created: $(PrUrl)"
+              echo "PR number:  $(PrNumber)"
+            displayName: Print PR info
+
+          # Step 3: Post build status comment
+          - task: AiPrReviewer@1
+            displayName: Post build result comment
+            condition: always()
+            inputs:
+              action: commentPR
+              provider: $(PROVIDER)
+              accessToken: $(ACCESS_TOKEN)
+              repository: $(TARGET_REPO)
+              serverUrl: $(SERVER_URL)
+              prNumber: $(PrNumber)
+              commentBody: |
+                ## Build Result: $(Agent.JobStatus)
+
+                | | |
+                |---|---|
+                | **Build** | $(Build.BuildNumber) |
+                | **Branch** | $(Build.SourceBranchName) |
+                | **Status** | $(Agent.JobStatus) |
+                | **Pipeline** | [View run]($(System.TeamFoundationCollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)) |

@@ -27,6 +27,8 @@ async function run(): Promise<void> {
     const aiModel = tl.getInput('aiModel', false) ?? 'claude-sonnet-4-6';
     const aiReviewContext = tl.getInput('aiReviewContext', false) ?? '';
     const aiMaxDiffLines = parseInt(tl.getInput('aiMaxDiffLines', false) ?? '500', 10);
+    const aiReviewMode = (tl.getInput('aiReviewMode', false) ?? 'standard') as 'standard' | 'per-file';
+    const aiMaxFiles = parseInt(tl.getInput('aiMaxFiles', false) ?? '10', 10);
 
     // ── Provider setup ───────────────────────────────────────────────────────
     const providerInstance = buildProvider(provider, accessToken, serverUrl);
@@ -47,6 +49,8 @@ async function run(): Promise<void> {
           aiModel,
           aiReviewContext,
           aiMaxDiffLines,
+          aiReviewMode,
+          aiMaxFiles,
         });
         break;
 
@@ -62,6 +66,8 @@ async function run(): Promise<void> {
           aiModel,
           aiReviewContext,
           aiMaxDiffLines,
+          aiReviewMode,
+          aiMaxFiles,
         });
         break;
       }
@@ -101,6 +107,8 @@ interface CreatePRParams {
   aiModel: string;
   aiReviewContext: string;
   aiMaxDiffLines: number;
+  aiReviewMode: 'standard' | 'per-file';
+  aiMaxFiles: number;
 }
 
 async function handleCreatePR(params: CreatePRParams): Promise<void> {
@@ -108,6 +116,7 @@ async function handleCreatePR(params: CreatePRParams): Promise<void> {
     provider, repository, sourceBranch, targetBranch,
     prTitle, prDescription, failOnExistingPR,
     enableAiReview, aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines,
+    aiReviewMode, aiMaxFiles,
   } = params;
 
   // Check for existing PR first
@@ -127,7 +136,7 @@ async function handleCreatePR(params: CreatePRParams): Promise<void> {
       await runAiReview({
         provider, repository, prNumber: existing.number,
         prTitle: existing.title, prDescription,
-        aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines,
+        aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
       });
     }
     return;
@@ -147,7 +156,7 @@ async function handleCreatePR(params: CreatePRParams): Promise<void> {
     await runAiReview({
       provider, repository, prNumber: pr.number,
       prTitle: pr.title, prDescription,
-      aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines,
+      aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
     });
   }
 
@@ -164,6 +173,8 @@ interface ReviewPRParams {
   aiModel: string;
   aiReviewContext: string;
   aiMaxDiffLines: number;
+  aiReviewMode: 'standard' | 'per-file';
+  aiMaxFiles: number;
 }
 
 async function handleReviewPR(params: ReviewPRParams): Promise<void> {
@@ -213,12 +224,14 @@ interface AiReviewParams {
   aiModel: string;
   aiReviewContext: string;
   aiMaxDiffLines: number;
+  aiReviewMode: 'standard' | 'per-file';
+  aiMaxFiles: number;
 }
 
 async function runAiReview(params: AiReviewParams): Promise<void> {
   const {
     provider, repository, prNumber, prTitle, prDescription,
-    aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines,
+    aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
   } = params;
 
   console.log(`Fetching diff for PR #${prNumber}...`);
@@ -229,7 +242,7 @@ async function runAiReview(params: AiReviewParams): Promise<void> {
     return;
   }
 
-  console.log(`Running AI review with model: ${aiModel}`);
+  console.log(`Running AI review — mode: ${aiReviewMode}, model: ${aiModel}`);
   const result = await reviewPullRequest(aiApiKey, {
     diff,
     prTitle,
@@ -237,6 +250,8 @@ async function runAiReview(params: AiReviewParams): Promise<void> {
     additionalContext: aiReviewContext,
     model: aiModel,
     maxDiffLines: aiMaxDiffLines,
+    reviewMode: aiReviewMode,
+    maxFiles: aiMaxFiles,
   });
 
   const formattedComment = formatAiComment(result.fullComment);
@@ -244,7 +259,16 @@ async function runAiReview(params: AiReviewParams): Promise<void> {
   console.log(`Posting AI review comment: ${result.summary}`);
   await provider.postComment({ repository, prNumber, body: formattedComment });
 
-  console.log('AI review comment posted successfully.');
+  // Expose review metrics as pipeline variables for downstream steps/summary
+  tl.setVariable('ReviewSummary', result.summary);
+  tl.setVariable('ReviewVerdict', result.verdict);
+  tl.setVariable('ReviewTotalIssues', String(result.totalIssues));
+  for (const cat of result.categories) {
+    const key = `Review_${cat.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    tl.setVariable(key, String(cat.count));
+  }
+
+  console.log(`AI review complete — verdict: ${result.verdict}, issues: ${result.totalIssues}`);
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

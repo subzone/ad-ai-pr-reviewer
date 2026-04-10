@@ -321,7 +321,14 @@ steps:
       Coverage: 87%
 ```
 
-For more examples, see [`examples/pipeline.yml`](examples/pipeline.yml).
+For more examples, see the [`examples/`](examples/) directory:
+
+| File | Description |
+|---|---|
+| [`github-pipeline.yml`](examples/github-pipeline.yml) | Full GitHub integration — create PR, AI review, build status comment |
+| [`gitlab-pipeline.yml`](examples/gitlab-pipeline.yml) | Full GitLab integration — cloud and self-hosted, create MR, AI review |
+| [`bitbucket-pipeline.yml`](examples/bitbucket-pipeline.yml) | Full Bitbucket integration — Cloud and Server/Data Center |
+| [`pipeline.yml`](examples/pipeline.yml) | Quick reference — all three actions in one file |
 
 ---
 

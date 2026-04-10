@@ -59,6 +59,8 @@ async function run() {
         const aiModel = tl.getInput('aiModel', false) ?? 'claude-sonnet-4-6';
         const aiReviewContext = tl.getInput('aiReviewContext', false) ?? '';
         const aiMaxDiffLines = parseInt(tl.getInput('aiMaxDiffLines', false) ?? '500', 10);
+        const aiReviewMode = (tl.getInput('aiReviewMode', false) ?? 'standard');
+        const aiMaxFiles = parseInt(tl.getInput('aiMaxFiles', false) ?? '10', 10);
         // ── Provider setup ───────────────────────────────────────────────────────
         const providerInstance = buildProvider(provider, accessToken, serverUrl);
         // ── Action routing ───────────────────────────────────────────────────────
@@ -77,6 +79,8 @@ async function run() {
                     aiModel,
                     aiReviewContext,
                     aiMaxDiffLines,
+                    aiReviewMode,
+                    aiMaxFiles,
                 });
                 break;
             case 'reviewPR': {
@@ -91,6 +95,8 @@ async function run() {
                     aiModel,
                     aiReviewContext,
                     aiMaxDiffLines,
+                    aiReviewMode,
+                    aiMaxFiles,
                 });
                 break;
             }
@@ -114,7 +120,7 @@ async function run() {
     }
 }
 async function handleCreatePR(params) {
-    const { provider, repository, sourceBranch, targetBranch, prTitle, prDescription, failOnExistingPR, enableAiReview, aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines, } = params;
+    const { provider, repository, sourceBranch, targetBranch, prTitle, prDescription, failOnExistingPR, enableAiReview, aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles, } = params;
     // Check for existing PR first
     console.log(`Checking for existing PR: ${sourceBranch} → ${targetBranch} in ${repository}`);
     const existing = await provider.findExistingPR(repository, sourceBranch, targetBranch);
@@ -130,7 +136,7 @@ async function handleCreatePR(params) {
             await runAiReview({
                 provider, repository, prNumber: existing.number,
                 prTitle: existing.title, prDescription,
-                aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines,
+                aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
             });
         }
         return;
@@ -147,7 +153,7 @@ async function handleCreatePR(params) {
         await runAiReview({
             provider, repository, prNumber: pr.number,
             prTitle: pr.title, prDescription,
-            aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines,
+            aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
         });
     }
     tl.setResult(tl.TaskResult.Succeeded, `PR created: ${pr.url}`);
@@ -173,14 +179,14 @@ async function handleCommentPR(params) {
     tl.setResult(tl.TaskResult.Succeeded, `Comment posted on PR #${prNumber}`);
 }
 async function runAiReview(params) {
-    const { provider, repository, prNumber, prTitle, prDescription, aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines, } = params;
+    const { provider, repository, prNumber, prTitle, prDescription, aiApiKey, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles, } = params;
     console.log(`Fetching diff for PR #${prNumber}...`);
     const diff = await provider.getDiff({ repository, prNumber });
     if (!diff.trim()) {
         console.log('##[warning]No diff found for this PR. Skipping AI review.');
         return;
     }
-    console.log(`Running AI review with model: ${aiModel}`);
+    console.log(`Running AI review — mode: ${aiReviewMode}, model: ${aiModel}`);
     const result = await (0, reviewer_1.reviewPullRequest)(aiApiKey, {
         diff,
         prTitle,
@@ -188,11 +194,21 @@ async function runAiReview(params) {
         additionalContext: aiReviewContext,
         model: aiModel,
         maxDiffLines: aiMaxDiffLines,
+        reviewMode: aiReviewMode,
+        maxFiles: aiMaxFiles,
     });
     const formattedComment = (0, base_1.formatAiComment)(result.fullComment);
     console.log(`Posting AI review comment: ${result.summary}`);
     await provider.postComment({ repository, prNumber, body: formattedComment });
-    console.log('AI review comment posted successfully.');
+    // Expose review metrics as pipeline variables for downstream steps/summary
+    tl.setVariable('ReviewSummary', result.summary);
+    tl.setVariable('ReviewVerdict', result.verdict);
+    tl.setVariable('ReviewTotalIssues', String(result.totalIssues));
+    for (const cat of result.categories) {
+        const key = `Review_${cat.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        tl.setVariable(key, String(cat.count));
+    }
+    console.log(`AI review complete — verdict: ${result.verdict}, issues: ${result.totalIssues}`);
 }
 // ── Utilities ─────────────────────────────────────────────────────────────────
 function buildProvider(provider, accessToken, serverUrl) {

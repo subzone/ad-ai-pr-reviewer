@@ -205,12 +205,36 @@
     {
       "name": "aiMaxDiffLines",
       "type": "string",
-      "label": "Max Diff Lines to Review",
+      "label": "Max Diff Lines (per file in per-file mode)",
       "defaultValue": "500",
       "required": false,
       "groupName": "ai",
-      "helpMarkDown": "Truncate the diff sent to the AI if it exceeds this many lines. Prevents token limit issues on large PRs.",
+      "helpMarkDown": "Truncate each file diff sent to the AI if it exceeds this many lines. In per-file mode this applies per file (divided by 3). Prevents token limit issues on large PRs.",
       "visibleRule": "enableAiReview = true"
+    },
+    {
+      "name": "aiReviewMode",
+      "type": "pickList",
+      "label": "Review Mode",
+      "defaultValue": "standard",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "**Standard**: single API call with the full diff. **Per-file**: each changed file is reviewed individually, then synthesized into one holistic assessment. Per-file is more thorough but uses more API tokens.",
+      "options": {
+        "standard": "Standard (single pass)",
+        "per-file": "Per-file + synthesis (thorough)"
+      },
+      "visibleRule": "enableAiReview = true"
+    },
+    {
+      "name": "aiMaxFiles",
+      "type": "string",
+      "label": "Max Files to Review (per-file mode)",
+      "defaultValue": "10",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "In per-file mode, limit the number of files individually reviewed. Files beyond this limit are skipped. Increase for large PRs at the cost of more API calls.",
+      "visibleRule": "aiReviewMode = per-file"
     }
   ],
   "outputVariables": [
