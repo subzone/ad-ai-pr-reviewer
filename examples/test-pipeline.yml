@@ -46,21 +46,22 @@ stages:
             displayName: Build TypeScript
             workingDirectory: task
 
-          - script: node task/dist/index.js
+          - script: |
+              export INPUT_ACTION="reviewPR"
+              export INPUT_PROVIDER="github"
+              export INPUT_ACCESSTOKEN="$(GITHUB_PAT)"
+              export INPUT_REPOSITORY="$(TEST_REPO)"
+              export INPUT_PRNUMBER="$(TEST_PR_NUMBER)"
+              export INPUT_ENABLEAIREVIEW="true"
+              export INPUT_AIAPIKEY="$(ANTHROPIC_API_KEY)"
+              export INPUT_AIMODEL="$(AI_MODEL)"
+              export INPUT_AIREVIEWCONTEXT="This is a test run from Azure DevOps CI."
+              export INPUT_AIMAXDIFFLINES="300"
+              export AGENT_TEMPDIRECTORY="$(Agent.TempDirectory)"
+              export SYSTEM_DEFAULTWORKINGDIRECTORY="$(System.DefaultWorkingDirectory)"
+
+              node task/dist/index.js
             displayName: Run task — reviewPR
-            env:
-              INPUT_ACTION: reviewPR
-              INPUT_PROVIDER: github
-              INPUT_ACCESSTOKEN: $(GITHUB_PAT)
-              INPUT_REPOSITORY: $(TEST_REPO)
-              INPUT_PRNUMBER: $(TEST_PR_NUMBER)
-              INPUT_ENABLEAIREVIEW: true
-              INPUT_AIAPIKEY: $(ANTHROPIC_API_KEY)
-              INPUT_AIMODEL: $(AI_MODEL)
-              INPUT_AIREVIEWCONTEXT: "This is a test run from Azure DevOps CI."
-              INPUT_AIMAXDIFFLINES: "300"
-              AGENT_TEMPDIRECTORY: $(Agent.TempDirectory)
-              SYSTEM_DEFAULTWORKINGDIRECTORY: $(System.DefaultWorkingDirectory)
 
       # ── Job 2: create branch → commit → createPR → AI review → cleanup ───
       - job: TestCreateAndReview
@@ -161,30 +162,27 @@ stages:
             env:
               GITHUB_PAT: $(GITHUB_PAT)
 
-          - script: node task/dist/index.js
+          - script: |
+              export INPUT_ACTION="createPR"
+              export INPUT_PROVIDER="github"
+              export INPUT_ACCESSTOKEN="$(GITHUB_PAT)"
+              export INPUT_REPOSITORY="$(TEST_REPO)"
+              export INPUT_SOURCEBRANCH="$(SOURCE_BRANCH)"
+              export INPUT_TARGETBRANCH="main"
+              export INPUT_PRTITLE="[ADO Test] AI Reviewer test run #$(Build.BuildId)"
+              export INPUT_PRDESCRIPTION="Automated test PR — Build $(Build.BuildNumber). Will be closed automatically."
+              export INPUT_ENABLEAIREVIEW="true"
+              export INPUT_AIAPIKEY="$(ANTHROPIC_API_KEY)"
+              export INPUT_AIMODEL="$(AI_MODEL)"
+              export INPUT_AIREVIEWCONTEXT="Automated functional test of the AI PR Reviewer ADO extension. Briefly confirm the review pipeline is working."
+              export INPUT_AIMAXDIFFLINES="100"
+              export INPUT_FAILONEXISTINGPR="false"
+              export AGENT_TEMPDIRECTORY="$(Agent.TempDirectory)"
+              export SYSTEM_DEFAULTWORKINGDIRECTORY="$(System.DefaultWorkingDirectory)"
+
+              node task/dist/index.js
             displayName: Run task — createPR + AI Review
             name: createPR
-            env:
-              INPUT_ACTION: createPR
-              INPUT_PROVIDER: github
-              INPUT_ACCESSTOKEN: $(GITHUB_PAT)
-              INPUT_REPOSITORY: $(TEST_REPO)
-              INPUT_SOURCEBRANCH: $(SOURCE_BRANCH)
-              INPUT_TARGETBRANCH: main
-              INPUT_PRTITLE: "[ADO Test] AI Reviewer test run #$(Build.BuildId)"
-              INPUT_PRDESCRIPTION: |
-                Automated test PR created by Azure DevOps pipeline to validate the AI PR Reviewer extension.
-                Build: $(Build.BuildNumber)
-
-                > This PR will be closed automatically after the test completes.
-              INPUT_ENABLEAIREVIEW: true
-              INPUT_AIAPIKEY: $(ANTHROPIC_API_KEY)
-              INPUT_AIMODEL: $(AI_MODEL)
-              INPUT_AIREVIEWCONTEXT: "This is an automated functional test of the AI PR Reviewer ADO extension. Briefly acknowledge the change and confirm the review pipeline is working correctly."
-              INPUT_AIMAXDIFFLINES: "100"
-              INPUT_FAILONEXISTINGPR: false
-              AGENT_TEMPDIRECTORY: $(Agent.TempDirectory)
-              SYSTEM_DEFAULTWORKINGDIRECTORY: $(System.DefaultWorkingDirectory)
 
           - script: |
               echo "PR URL:    $(createPR.PrUrl)"
