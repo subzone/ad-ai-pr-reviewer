@@ -171,17 +171,13 @@ stages:
               export INPUT_TARGETBRANCH="main"
               export INPUT_PRTITLE="[ADO Test] AI Reviewer test run #$(Build.BuildId)"
               export INPUT_PRDESCRIPTION="Automated test PR — Build $(Build.BuildNumber). Will be closed automatically."
-              export INPUT_ENABLEAIREVIEW="true"
-              export INPUT_AIAPIKEY="$(ANTHROPIC_API_KEY)"
-              export INPUT_AIMODEL="$(AI_MODEL)"
-              export INPUT_AIREVIEWCONTEXT="Automated functional test of the AI PR Reviewer ADO extension. Briefly confirm the review pipeline is working."
-              export INPUT_AIMAXDIFFLINES="100"
+              export INPUT_ENABLEAIREVIEW="false"
               export INPUT_FAILONEXISTINGPR="false"
               export AGENT_TEMPDIRECTORY="$(Agent.TempDirectory)"
               export SYSTEM_DEFAULTWORKINGDIRECTORY="$(System.DefaultWorkingDirectory)"
 
               node task/dist/index.js
-            displayName: Run task — createPR + AI Review
+            displayName: Run task — createPR
             name: createPR
 
           - script: |
@@ -189,9 +185,25 @@ stages:
               echo "PR Number: $(createPR.PrNumber)"
             displayName: Print created PR info
 
+          - script: |
+              export INPUT_ACTION="reviewPR"
+              export INPUT_PROVIDER="github"
+              export INPUT_ACCESSTOKEN="$(GITHUB_PAT)"
+              export INPUT_REPOSITORY="$(TEST_REPO)"
+              export INPUT_PRNUMBER="$(createPR.PrNumber)"
+              export INPUT_ENABLEAIREVIEW="true"
+              export INPUT_AIAPIKEY="$(ANTHROPIC_API_KEY)"
+              export INPUT_AIMODEL="$(AI_MODEL)"
+              export INPUT_AIREVIEWCONTEXT="Automated functional test of the AI PR Reviewer ADO extension. Briefly confirm the review pipeline is working."
+              export INPUT_AIMAXDIFFLINES="100"
+              export AGENT_TEMPDIRECTORY="$(Agent.TempDirectory)"
+              export SYSTEM_DEFAULTWORKINGDIRECTORY="$(System.DefaultWorkingDirectory)"
+
+              node task/dist/index.js
+            displayName: Run task — reviewPR
+
           # Close test PR and delete branch to keep the repo clean
           - script: |
-              set -e
               REPO="$(TEST_REPO)"
               PR_NUMBER="$(createPR.PrNumber)"
               BRANCH="$(SOURCE_BRANCH)"
@@ -202,16 +214,16 @@ stages:
               fi
 
               echo "Closing PR #$PR_NUMBER..."
-              curl -sf -X PATCH \
+              curl -s -X PATCH \
                 -H "Authorization: Bearer $GITHUB_PAT" \
                 -H "Content-Type: application/json" \
                 "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER" \
-                -d '{"state":"closed"}'
+                -d '{"state":"closed"}' > /dev/null
 
               echo "Deleting branch $BRANCH..."
-              curl -sf -X DELETE \
+              curl -s -X DELETE \
                 -H "Authorization: Bearer $GITHUB_PAT" \
-                "https://api.github.com/repos/$REPO/git/refs/heads/$BRANCH"
+                "https://api.github.com/repos/$REPO/git/refs/heads/$BRANCH" > /dev/null
 
               echo "Cleanup done."
             displayName: Close PR + delete test branch
