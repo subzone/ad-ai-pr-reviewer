@@ -22,7 +22,11 @@ export class BitbucketProvider implements Provider {
     this.client = axios.create({
       baseURL,
       headers: {
-        Authorization: `Bearer ${config.accessToken}`,
+        // Cloud uses Basic auth (username:app_password → Base64)
+        // Server uses Bearer auth (Personal Access Token)
+        Authorization: isServer
+          ? `Bearer ${config.accessToken}`
+          : `Basic ${Buffer.from(config.accessToken).toString('base64')}`,
         'Content-Type': 'application/json',
       },
     });

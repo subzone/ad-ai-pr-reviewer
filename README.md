@@ -30,11 +30,13 @@ An Azure DevOps pipeline task that creates pull requests and posts **AI-generate
 ## Features
 
 - **Create PRs** on GitHub, GitLab, Bitbucket Cloud, or Bitbucket Server from any ADO pipeline
-- **AI code review** powered by [Claude](https://anthropic.com) (Opus, Sonnet, or Haiku) — posts a structured review comment directly on the PR
+- **AI code review** powered by [Claude](https://anthropic.com) — posts a structured review comment directly on the PR
+- **Multiple AI hosting options** — Anthropic direct, Azure AI Foundry, AWS Bedrock, Google Vertex AI, or LiteLLM
+- **Per-file review mode** — reviews each file individually then synthesizes findings
 - **Post comments** on existing PRs, labelled as AI PR Comments
 - Detects and handles duplicate PRs gracefully
 - Configurable diff truncation to stay within token limits on large PRs
-- Exposes `PrUrl` and `PrNumber` as output variables for downstream steps
+- Exposes `PrUrl`, `PrNumber`, `ReviewVerdict`, `ReviewTotalIssues`, and `ReviewSummary` as output variables
 - Works with GitHub Enterprise, GitLab self-hosted, Bitbucket Server/Data Center
 
 ---
@@ -45,18 +47,29 @@ An Azure DevOps pipeline task that creates pull requests and posts **AI-generate
 
 Go to [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=subzone.ad-ai-pr-reviewer) and install into your Azure DevOps organization.
 
-### 2. Create PR with AI Review
+### 2. Review PRs with AI
 
 ```yaml
+trigger: none
+
+pr:
+  branches:
+    include: [main]
+
+variables:
+- group: ai-reviewer-secrets
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
 - task: AiPrReviewer@1
   inputs:
-    action: createPR
+    action: reviewPR
     provider: github
     accessToken: $(GITHUB_PAT)
     repository: myorg/myrepo
-    sourceBranch: $(Build.SourceBranchName)
-    targetBranch: main
-    prTitle: "$(Build.SourceBranchName): automated PR"
+    prNumber: $(System.PullRequest.PullRequestNumber)
     enableAiReview: true
     aiApiKey: $(ANTHROPIC_API_KEY)
     aiModel: claude-sonnet-4-6
@@ -178,7 +191,7 @@ See [USER_GUIDE.md → Model Selection](docs/USER_GUIDE.md#claude-model-selectio
 
 | Input | Required | Default | Description |
 |---|:---:|---|---|
-| `action` | ✅ | `createPR` | `createPR` \| `reviewPR` \| `commentPR` |
+| `action` | ✅ | `reviewPR` | `createPR` \| `reviewPR` \| `commentPR` |
 | `provider` | ✅ | `github` | `github` \| `gitlab` \| `bitbucket` \| `bitbucket-server` |
 | `accessToken` | ✅ | | PAT with repo read/write and PR permissions. Use a secret variable. |
 | `repository` | ✅ | | Repository in `owner/repo` format |
@@ -200,11 +213,20 @@ See [USER_GUIDE.md → Model Selection](docs/USER_GUIDE.md#claude-model-selectio
 
 | Input | Required | Default | Description |
 |---|:---:|---|---|
-| `enableAiReview` | | `false` | Enable Claude AI review (valid for `createPR` and `reviewPR`) |
-| `aiApiKey` | | | Anthropic API key. Use a secret variable. Get one at [console.anthropic.com](https://console.anthropic.com) |
-| `aiModel` | | `claude-sonnet-4-6` | `claude-opus-4-6` \| `claude-sonnet-4-6` \| `claude-haiku-4-5-20251001` |
+| `enableAiReview` | | `false` | Enable AI review (valid for `createPR` and `reviewPR`) |
+| `aiProvider` | | `anthropic` | `anthropic` \| `azure` \| `bedrock` \| `vertex` \| `litellm` |
+| `aiApiKey` | | | API key — required for `anthropic`, `azure`, `litellm` |
+| `aiBaseUrl` | | | Endpoint URL — required for `azure` and `litellm` |
+| `awsRegion` | | | AWS region — required for `bedrock` (e.g. `us-east-1`) |
+| `awsAccessKeyId` | | | AWS access key — optional for `bedrock` (omit to use IAM role) |
+| `awsSecretAccessKey` | | | AWS secret key — optional for `bedrock` (omit to use IAM role) |
+| `gcpProjectId` | | | GCP project ID — required for `vertex` |
+| `gcpRegion` | | | GCP region — required for `vertex` (e.g. `us-east5`) |
+| `aiModel` | | `claude-sonnet-4-6` | Model ID (deployment name for Azure/Bedrock — see [User Guide](docs/USER_GUIDE.md)) |
 | `aiReviewContext` | | | Extra instructions for the reviewer (e.g. `"Focus on security issues"`) |
-| `aiMaxDiffLines` | | `500` | Truncate diff at this many lines to avoid token limits on large PRs |
+| `aiMaxDiffLines` | | `500` | Truncate diff at this many lines |
+| `aiReviewMode` | | `standard` | `standard` (whole diff) or `per-file` (file-by-file with synthesis) |
+| `aiMaxFiles` | | `10` | Max files reviewed in `per-file` mode |
 
 ---
 
@@ -214,6 +236,9 @@ See [USER_GUIDE.md → Model Selection](docs/USER_GUIDE.md#claude-model-selectio
 |---|---|
 | `PrUrl` | URL of the created or found PR |
 | `PrNumber` | Number of the created or found PR |
+| `ReviewVerdict` | `lgtm` · `needs-work` · `critical` |
+| `ReviewTotalIssues` | Count of issues found |
+| `ReviewSummary` | One-line summary from Claude |
 
 Use in downstream steps:
 
@@ -224,7 +249,10 @@ Use in downstream steps:
     action: createPR
     # ...
 
-- script: echo "PR: $(CreatePR.PrUrl) #$(CreatePR.PrNumber)"
+- script: |
+    echo "PR: $(CreatePR.PrUrl) #$(CreatePR.PrNumber)"
+    echo "Verdict: $(CreatePR.ReviewVerdict) — $(CreatePR.ReviewTotalIssues) issues"
+    echo "Summary: $(CreatePR.ReviewSummary)"
   displayName: 'Show PR Details'
 ```
 
@@ -311,7 +339,7 @@ steps:
   inputs:
     action: commentPR
     provider: bitbucket
-    accessToken: $(BITBUCKET_APP_PASSWORD)
+    accessToken: $(BITBUCKET_USERNAME):$(BITBUCKET_APP_PASSWORD)
     repository: myworkspace/myrepo
     prNumber: $(PR_NUMBER)
     commentBody: |

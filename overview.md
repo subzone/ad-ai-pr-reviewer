@@ -128,7 +128,7 @@ pr:
     include: [main]
 
 variables:
-- group: ai-reviewer-secrets   # contains BITBUCKET_APP_PASSWORD + ANTHROPIC_API_KEY
+- group: ai-reviewer-secrets   # contains BITBUCKET_USERNAME + BITBUCKET_APP_PASSWORD + ANTHROPIC_API_KEY
 
 pool:
   vmImage: ubuntu-latest
@@ -138,7 +138,7 @@ steps:
   inputs:
     action: reviewPR
     provider: bitbucket
-    accessToken: $(BITBUCKET_APP_PASSWORD)   # format: username:app_password
+    accessToken: $(BITBUCKET_USERNAME):$(BITBUCKET_APP_PASSWORD)   # format: username:app_password
     repository: myworkspace/myrepo           # ← change this
     prNumber: $(System.PullRequest.PullRequestNumber)
     enableAiReview: true
