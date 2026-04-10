@@ -181,8 +181,8 @@ stages:
             name: createPR
 
           - script: |
-              echo "PR URL:    $(createPR.PrUrl)"
-              echo "PR Number: $(createPR.PrNumber)"
+              echo "PR URL:    $(PrUrl)"
+              echo "PR Number: $(PrNumber)"
             displayName: Print created PR info
 
           - script: |
@@ -190,7 +190,7 @@ stages:
               export INPUT_PROVIDER="github"
               export INPUT_ACCESSTOKEN="$(GITHUB_PAT)"
               export INPUT_REPOSITORY="$(TEST_REPO)"
-              export INPUT_PRNUMBER="$(createPR.PrNumber)"
+              export INPUT_PRNUMBER="$(PrNumber)"
               export INPUT_ENABLEAIREVIEW="true"
               export INPUT_AIAPIKEY="$(ANTHROPIC_API_KEY)"
               export INPUT_AIMODEL="$(AI_MODEL)"
@@ -205,7 +205,7 @@ stages:
           # Close test PR and delete branch to keep the repo clean
           - script: |
               REPO="$(TEST_REPO)"
-              PR_NUMBER="$(createPR.PrNumber)"
+              PR_NUMBER="$(PrNumber)"
               BRANCH="$(SOURCE_BRANCH)"
 
               if [ -z "$PR_NUMBER" ]; then
