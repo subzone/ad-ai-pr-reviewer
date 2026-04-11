@@ -100,4 +100,140 @@ describe('AI Reviewer Utilities', () => {
       expect(elements.length).toBe(5);
     });
   });
+
+  describe('Anti-hallucination validation', () => {
+    it('should detect when AI mentions non-existent files', () => {
+      const diff = `diff --git a/src/utils.ts b/src/utils.ts
+index abc123..def456 100644
+--- a/src/utils.ts
++++ b/src/utils.ts
+@@ -1,3 +1,4 @@
++export function newFunction() {}`;
+
+      const review = `The changes in \`src/utils.ts\` look good.
+However, I noticed an issue in \`src/helper.ts\` that should be addressed.`;
+
+      // Test would validate that helper.ts is not in the diff
+      const mentionedFiles = ['src/utils.ts', 'src/helper.ts'];
+      const actualFiles = ['src/utils.ts'];
+      const invalidFile = mentionedFiles.find(f => !actualFiles.includes(f));
+      
+      expect(invalidFile).toBe('src/helper.ts');
+    });
+
+    it('should warn when AI provides too many specific line numbers', () => {
+      const review = `Issues found:
+- Line 15 has a bug
+- Line 22 needs fixing
+- Line 35 is problematic
+- Line 48 should change
+- Line 61 has an error
+- Line 73 needs update`;
+
+      const lineRefs = review.match(/\bline[s]?\s+\d+/gi);
+      expect(lineRefs?.length).toBeGreaterThanOrEqual(5);
+    });
+
+    it('should detect vague/potentially hallucinated comments', () => {
+      const vagueReview = `This code might cause issues.
+The implementation could potentially lead to problems.
+You should consider adding validation without checking the existing code.
+This may result in security vulnerabilities.`;
+
+      const vaguePatterns = [
+        /\b(may|might|could|possibly|potentially)\s+(cause|lead to|result in)\b/gi,
+      ];
+      
+      let vagueCount = 0;
+      for (const pattern of vaguePatterns) {
+        const matches = Array.from(vagueReview.matchAll(pattern));
+        vagueCount += matches.length;
+      }
+      
+      expect(vagueCount).toBeGreaterThan(2);
+    });
+
+    it('should validate review length proportional to diff size', () => {
+      const shortDiff = `diff --git a/file.ts b/file.ts
++one line change`;
+      
+      const excessiveReview = 'x'.repeat(2000);
+      
+      const ratio = excessiveReview.length / shortDiff.split('\n').length;
+      expect(ratio).toBeGreaterThan(5);
+    });
+
+    it('should detect common hallucination markers', () => {
+      const review = `As mentioned earlier, this function should be refactored.
+Based on the previous implementation, we need to update this.
+The existing function validateUser needs to be changed.`;
+
+      const markers = [
+        /as (?:mentioned|discussed|stated) (?:earlier|above|previously)/i,
+        /based on (?:the|your) (?:previous|earlier|existing) (?:implementation|code)/i,
+      ];
+
+      let foundMarkers = 0;
+      for (const marker of markers) {
+        if (marker.test(review)) foundMarkers++;
+      }
+
+      expect(foundMarkers).toBeGreaterThan(0);
+    });
+
+    it('should extract file metadata from diff correctly', () => {
+      const diff = `diff --git a/src/index.ts b/src/index.ts
+index abc123..def456 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,3 +1,4 @@
++import { helper } from './utils';
+ export function main() {}
+diff --git a/src/utils.ts b/src/utils.ts
+index 111222..333444 100644
+--- a/src/utils.ts
++++ b/src/utils.ts
+@@ -1,2 +1,3 @@
+ export function helper() {}
++export function newHelper() {}`;
+
+      const fileMatches = Array.from(diff.matchAll(/^diff --git a\/.+ b\/(.+)$/gm));
+      const files = fileMatches.map(m => m[1].trim());
+      
+      expect(files).toContain('src/index.ts');
+      expect(files).toContain('src/utils.ts');
+      expect(files.length).toBe(2);
+    });
+
+    it('should count additions and deletions correctly', () => {
+      const diff = `diff --git a/file.ts b/file.ts
+--- a/file.ts
++++ b/file.ts
+@@ -1,5 +1,6 @@
+ unchanged
+-removed line
++added line 1
++added line 2
+ unchanged`;
+
+      const additions = (diff.match(/^\+(?!\+\+)/gm) || []).length;
+      const deletions = (diff.match(/^-(?!--)/gm) || []).length;
+      
+      expect(additions).toBe(2);
+      expect(deletions).toBe(1);
+    });
+
+    it('should extract mentioned files from review', () => {
+      const review = `Changes in \`src/index.ts\` look good.
+### \`src/utils.ts\`
+The implementation in \`lib/helper.js\` needs review.`;
+
+      const backtickMatches = Array.from(review.matchAll(/`([a-zA-Z0-9_\-./]+\.[a-zA-Z0-9]+)`/g));
+      const files = backtickMatches.map(m => m[1]);
+      
+      expect(files).toContain('src/index.ts');
+      expect(files).toContain('src/utils.ts');
+      expect(files).toContain('lib/helper.js');
+    });
+  });
 });

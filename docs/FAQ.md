@@ -129,6 +129,41 @@ See [USER_GUIDE.md → AI Review Context](./USER_GUIDE.md#ai-review-context) for
 
 ---
 
+### How do I prevent AI hallucinations in reviews?
+
+The plugin includes built-in anti-hallucination safeguards:
+
+**1. Grounding Instructions** — The AI is explicitly told to:
+- Only comment on code visible in the diff
+- Never reference files or functions not shown
+- Use cautious language when uncertain
+
+**2. Automatic Validation** — After each review, the system checks for:
+- Mentions of files not in the diff
+- Excessive specific line numbers
+- Vague/speculative language
+- Disproportionate review length
+
+**3. Validation Warnings** — Watch your pipeline logs for:
+```
+⚠️  AI Review Validation Warnings:
+  - AI mentioned file "helper.ts" which is not in the diff
+  - Review contains 6 vague suggestions - may lack grounding
+```
+
+**Best practices:**
+```yaml
+reviewMode: per-file      # Reduces context confusion (for large PRs)
+maxDiffLines: 500         # Prevents overwhelming the AI
+aiReviewContext: |        # Provides necessary context
+  This uses TypeScript with strict null checks.
+  Focus on type safety.
+```
+
+See [USER_GUIDE.md → Anti-Hallucination Safeguards](./USER_GUIDE.md#anti-hallucination-safeguards) for details.
+
+---
+
 ### How much does AI review cost?
 
 **Approximate costs per PR:**
@@ -160,6 +195,69 @@ The plugin truncates at `aiMaxDiffLines` (default: 500 lines).
    - Improves code quality
 
 See [USER_GUIDE.md → Handling Large PRs](./USER_GUIDE.md#handling-large-prs).
+
+---
+
+### How do I track token usage and costs?
+
+Every review automatically logs token usage and costs:
+
+```
+💰 Token Usage — Standard Review:
+  Model: claude-sonnet-4-6
+  Input tokens: 3,245
+  Output tokens: 876
+  Total tokens: 4,121
+  Estimated cost: $0.0222
+```
+
+**Access via pipeline variables:**
+```yaml
+- script: |
+    echo "Tokens: $(ReviewTotalTokens)"
+    echo "Cost: \$$(ReviewEstimatedCost)"
+```
+
+**Available variables:**
+- `ReviewInputTokens`, `ReviewOutputTokens`, `ReviewTotalTokens`
+- `ReviewEstimatedCost` (in dollars)
+- `ReviewModel`
+- `ReviewCacheReadTokens`, `ReviewCacheCreationTokens` (if caching used)
+
+See [USER_GUIDE.md → Token Usage & Cost Tracking](./USER_GUIDE.md#token-usage--cost-tracking) for monitoring examples.
+
+---
+
+### Can I see the AI's reasoning process?
+
+Yes! Enable `aiEnableReasoning` to see how the AI analyzes your code:
+
+```yaml
+enableAiReview: true
+aiEnableReasoning: true
+```
+
+The pipeline logs will show the AI's thought process:
+
+```
+🧠 AI Reasoning — File: src/auth.ts:
+
+--- Thought 1 ---
+Examining the authentication changes. The new password
+validation looks secure, but I should verify the regex
+pattern matches the security requirements...
+```
+
+**Trade-offs:**
+- ✅ Better transparency and debugging
+- ⚠️ Increases token usage by ~20-30%
+
+**Use cases:**
+- Debug why AI flagged/missed something
+- Improve your `aiReviewContext`
+- Understand AI's decision-making
+
+See [USER_GUIDE.md → AI Reasoning Output](./USER_GUIDE.md#ai-reasoning-output).
 
 ---
 

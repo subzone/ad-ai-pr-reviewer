@@ -28,6 +28,7 @@ async function run(): Promise<void> {
     const aiMaxDiffLines = parseInt(tl.getInput('aiMaxDiffLines', false) ?? '500', 10);
     const aiReviewMode = (tl.getInput('aiReviewMode', false) ?? 'standard') as 'standard' | 'per-file';
     const aiMaxFiles = parseInt(tl.getInput('aiMaxFiles', false) ?? '10', 10);
+    const aiEnableReasoning = tl.getBoolInput('aiEnableReasoning', false);
 
     // ── AI provider config ────────────────────────────────────────────────────
     const aiProviderConfig = enableAiReview
@@ -55,6 +56,7 @@ async function run(): Promise<void> {
           aiMaxDiffLines,
           aiReviewMode,
           aiMaxFiles,
+          aiEnableReasoning,
         });
         break;
 
@@ -72,6 +74,7 @@ async function run(): Promise<void> {
           aiMaxDiffLines,
           aiReviewMode,
           aiMaxFiles,
+          aiEnableReasoning,
         });
         break;
       }
@@ -113,6 +116,7 @@ interface CreatePRParams {
   aiMaxDiffLines: number;
   aiReviewMode: 'standard' | 'per-file';
   aiMaxFiles: number;
+  aiEnableReasoning: boolean;
 }
 
 async function handleCreatePR(params: CreatePRParams): Promise<void> {
@@ -120,7 +124,7 @@ async function handleCreatePR(params: CreatePRParams): Promise<void> {
     provider, repository, sourceBranch, targetBranch,
     prTitle, prDescription, failOnExistingPR,
     enableAiReview, aiProviderConfig, aiModel, aiReviewContext, aiMaxDiffLines,
-    aiReviewMode, aiMaxFiles,
+    aiReviewMode, aiMaxFiles, aiEnableReasoning,
   } = params;
 
   console.log(`Checking for existing PR: ${sourceBranch} → ${targetBranch} in ${repository}`);
@@ -140,6 +144,7 @@ async function handleCreatePR(params: CreatePRParams): Promise<void> {
         provider, repository, prNumber: existing.number,
         prTitle: existing.title, prDescription,
         aiProviderConfig, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
+        aiEnableReasoning,
       });
     }
     return;
@@ -159,6 +164,7 @@ async function handleCreatePR(params: CreatePRParams): Promise<void> {
       provider, repository, prNumber: pr.number,
       prTitle: pr.title, prDescription,
       aiProviderConfig, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
+      aiEnableReasoning,
     });
   }
 
@@ -177,6 +183,7 @@ interface ReviewPRParams {
   aiMaxDiffLines: number;
   aiReviewMode: 'standard' | 'per-file';
   aiMaxFiles: number;
+  aiEnableReasoning: boolean;
 }
 
 async function handleReviewPR(params: ReviewPRParams): Promise<void> {
@@ -226,12 +233,14 @@ interface AiReviewParams {
   aiMaxDiffLines: number;
   aiReviewMode: 'standard' | 'per-file';
   aiMaxFiles: number;
+  aiEnableReasoning: boolean;
 }
 
 async function runAiReview(params: AiReviewParams): Promise<void> {
   const {
     provider, repository, prNumber, prTitle, prDescription,
     aiProviderConfig, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
+    aiEnableReasoning,
   } = params;
 
   console.log(`Fetching diff for PR #${prNumber}...`);
@@ -242,7 +251,7 @@ async function runAiReview(params: AiReviewParams): Promise<void> {
     return;
   }
 
-  console.log(`Running AI review — provider: ${aiProviderConfig.provider}, mode: ${aiReviewMode}, model: ${aiModel}`);
+  console.log(`Running AI review — provider: ${aiProviderConfig.provider}, mode: ${aiReviewMode}, model: ${aiModel}${aiEnableReasoning ? ' (with reasoning)' : ''}`);
   const result = await reviewPullRequest(aiProviderConfig, {
     diff,
     prTitle,
@@ -252,7 +261,35 @@ async function runAiReview(params: AiReviewParams): Promise<void> {
     maxDiffLines: aiMaxDiffLines,
     reviewMode: aiReviewMode,
     maxFiles: aiMaxFiles,
+    enableReasoning: aiEnableReasoning,
   });
+
+  // Log validation warnings if present
+  if (result.validationWarnings && result.validationWarnings.length > 0) {
+    console.log(`##[warning]⚠️  AI Review Validation Warnings (${result.validationWarnings.length}):`);
+    result.validationWarnings.forEach(w => console.log(`##[warning]  - ${w}`));
+    tl.setVariable('ReviewHasWarnings', 'true');
+    tl.setVariable('ReviewWarningCount', String(result.validationWarnings.length));
+  } else {
+    tl.setVariable('ReviewHasWarnings', 'false');
+    tl.setVariable('ReviewWarningCount', '0');
+  }
+
+  // Export token usage and cost data
+  if (result.usage) {
+    tl.setVariable('ReviewInputTokens', String(result.usage.inputTokens));
+    tl.setVariable('ReviewOutputTokens', String(result.usage.outputTokens));
+    tl.setVariable('ReviewTotalTokens', String(result.usage.totalTokens));
+    tl.setVariable('ReviewEstimatedCost', result.usage.estimatedCost.toFixed(4));
+    tl.setVariable('ReviewModel', result.usage.model);
+    
+    if (result.usage.cacheReadTokens) {
+      tl.setVariable('ReviewCacheReadTokens', String(result.usage.cacheReadTokens));
+    }
+    if (result.usage.cacheCreationTokens) {
+      tl.setVariable('ReviewCacheCreationTokens', String(result.usage.cacheCreationTokens));
+    }
+  }
 
   const formattedComment = formatAiComment(result.fullComment);
   console.log(`Posting AI review comment: ${result.summary}`);
