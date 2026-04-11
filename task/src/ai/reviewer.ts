@@ -296,15 +296,20 @@ If the file looks fine, say "No issues." in one line.`;
     'List any issues with this file change. Be brief.',
   ].filter(l => l !== undefined).join('\n');
 
+  // When reasoning is enabled, max_tokens must be > budget_tokens
+  // Use higher limit to accommodate thinking output + response
+  const maxTokens = options.enableReasoning ? 2048 : 512;
+
   const messageParams: Anthropic.MessageCreateParamsNonStreaming = {
     model,
-    max_tokens: 512,
+    max_tokens: maxTokens,
     system,
     messages: [{ role: 'user', content: user }],
   };
 
   // Enable extended thinking if requested
   // Note: Anthropic requires minimum 1024 tokens for thinking budget
+  // and max_tokens must be greater than budget_tokens
   if (options.enableReasoning) {
     messageParams.thinking = {
       type: 'enabled',
