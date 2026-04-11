@@ -498,11 +498,14 @@ function buildStandardPrompt(options: ReviewOptions, diff: string): string {
 }
 
 function extractText(message: Anthropic.Message): string {
-  const content = message.content[0];
-  if (content.type !== 'text') {
-    throw new Error('Unexpected response type from AI model');
+  // When reasoning is enabled, content may contain thinking blocks first
+  // We need to find the text block specifically
+  for (const block of message.content) {
+    if (block.type === 'text') {
+      return block.text;
+    }
   }
-  return content.text;
+  throw new Error('No text content found in AI response');
 }
 
 function buildResult(reviewText: string, diff?: string): ReviewResult {
