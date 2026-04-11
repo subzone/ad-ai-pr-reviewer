@@ -74,11 +74,50 @@ export interface ReviewOptions {
   reviewMode?: 'standard' | 'per-file';
   maxFiles?: number;
   enableReasoning?: boolean;
+  enableTools?: boolean;  // Enable AI tool calling
+  enableSkills?: boolean;  // Enable specialized review skills
+  skills?: string[];  // Skill IDs to use (e.g., ['security', 'performance'])
+  skillAutoDetect?: boolean;  // Auto-detect skills based on file patterns
+  repositoryPath?: string;  // Path to checked-out repository for tool access
+  skipPatterns?: string[];  // Glob patterns for files to skip
+  priorityPatterns?: string[];  // Glob patterns for high-priority files
 }
 
 export interface ReviewCategory {
   name: string;
   count: number;
+}
+
+// Structured finding with mandatory citations
+export interface Finding {
+  severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
+  category: 'bug' | 'security' | 'performance' | 'style' | 'best-practice';
+  title: string;
+  description: string;
+  file: string;
+  diffLines?: string;  // Actual diff lines being referenced (e.g., "+  const password = req.body.password")
+  suggestion?: string;
+}
+
+// Structured reasoning with analysis steps
+export interface AnalysisStep {
+  phase: string;  // e.g., "Initial Scan", "Security Analysis", "Pattern Detection"
+  observation: string;
+  conclusion: string;
+}
+
+export interface StructuredReview {
+  summary: string;
+  findings: Finding[];
+  reasoning?: AnalysisStep[];
+  metadata: {
+    filesAnalyzed: string[];
+    totalFindings: number;
+    criticalCount: number;
+    highCount: number;
+    mediumCount: number;
+    lowCount: number;
+  };
 }
 
 export interface TokenUsage {
@@ -100,6 +139,7 @@ export interface ReviewResult {
   validationWarnings?: string[];
   usage?: TokenUsage;
   reasoning?: string[];
+  structuredFindings?: Finding[];  // New: structured data
 }
 
 interface DiffMetadata {
@@ -108,6 +148,17 @@ interface DiffMetadata {
   deletions: number;
   totalLines: number;
   fileExtensions: Set<string>;
+}
+
+interface FileAnalysis {
+  file: string;
+  diff: string;
+  additions: number;
+  deletions: number;
+  totalLines: number;
+  isBinary: boolean;
+  priority: number;  // Higher = more important
+  skipReason?: string;  // If set, file should be skipped
 }
 
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
@@ -124,6 +175,219 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'claude-3-5-sonnet-20241022': { input: 3.00, output: 15.00 },
   'claude-3-5-haiku-20241022': { input: 0.80, output: 4.00 },
 };
+
+// ── Tool Definitions ───────────────────────────────────────────────────────────
+
+const CODE_READING_TOOLS: Anthropic.Tool[] = [
+  {
+    name: 'read_full_file',
+    description: 'Read the complete contents of a file from the repository. Use this when you need to see the full context of a file beyond what\'s in the diff.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'The repository-relative path to the file (e.g., "src/auth/login.ts")',
+        },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'read_file_section',
+    description: 'Read a specific range of lines from a file. Use this when you need to see context around a specific area without loading the entire file.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'The repository-relative path to the file',
+        },
+        start_line: {
+          type: 'number',
+          description: 'The starting line number (1-indexed)',
+        },
+        end_line: {
+          type: 'number',
+          description: 'The ending line number (1-indexed, inclusive)',
+        },
+      },
+      required: ['path', 'start_line', 'end_line'],
+    },
+  },
+  {
+    name: 'search_codebase',
+    description: 'Search for a pattern across the codebase. Returns file paths and line numbers where the pattern appears. Use this to find where functions/classes are defined or used.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        pattern: {
+          type: 'string',
+          description: 'The text pattern to search for (case-sensitive)',
+        },
+        file_pattern: {
+          type: 'string',
+          description: 'Optional glob pattern to limit search to specific files (e.g., "src/**/*.ts")',
+        },
+      },
+      required: ['pattern'],
+    },
+  },
+  {
+    name: 'list_directory',
+    description: 'List the contents of a directory in the repository. Use this to discover what files exist in a specific path.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'The repository-relative directory path (e.g., "src/utils")',
+        },
+      },
+      required: ['path'],
+    },
+  },
+];
+
+/**
+ * Execute a tool call requested by the AI
+ */
+async function executeTool(
+  toolName: string,
+  toolInput: unknown,
+  repositoryPath: string,
+): Promise<string> {
+  const fs = await import('fs/promises');
+  const path = await import('path');
+  const util = await import('util');
+  const exec = util.promisify((await import('child_process')).exec);
+
+  try {
+    switch (toolName) {
+      case 'read_full_file': {
+        const input = toolInput as { path: string };
+        const filePath = path.join(repositoryPath, input.path);
+        
+        // Security: prevent path traversal
+        const resolvedPath = path.resolve(filePath);
+        const resolvedRepo = path.resolve(repositoryPath);
+        if (!resolvedPath.startsWith(resolvedRepo)) {
+          return `Error: Access denied - path outside repository: ${input.path}`;
+        }
+        
+        try {
+          const content = await fs.readFile(filePath, 'utf-8');
+          const lines = content.split('\n');
+          
+          // Limit file size to prevent token overflow
+          if (lines.length > 1000) {
+            return `File is too large (${lines.length} lines). Use read_file_section to read specific sections.`;
+          }
+          
+          // Add line numbers for reference
+          const numberedContent = lines
+            .map((line, idx) => `${String(idx + 1).padStart(4, ' ')}: ${line}`)
+            .join('\n');
+          
+          return `File: ${input.path}\n\n${numberedContent}`;
+        } catch (err) {
+          return `Error reading file: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      }
+
+      case 'read_file_section': {
+        const input = toolInput as { path: string; start_line: number; end_line: number };
+        const filePath = path.join(repositoryPath, input.path);
+        
+        // Security check
+        const resolvedPath = path.resolve(filePath);
+        const resolvedRepo = path.resolve(repositoryPath);
+        if (!resolvedPath.startsWith(resolvedRepo)) {
+          return `Error: Access denied - path outside repository`;
+        }
+        
+        try {
+          const content = await fs.readFile(filePath, 'utf-8');
+          const lines = content.split('\n');
+          
+          const start = Math.max(0, input.start_line - 1);
+          const end = Math.min(lines.length, input.end_line);
+          
+          if (start >= lines.length) {
+            return `Error: start_line ${input.start_line} exceeds file length (${lines.length} lines)`;
+          }
+          
+          const section = lines.slice(start, end);
+          const numberedSection = section
+            .map((line, idx) => `${String(start + idx + 1).padStart(4, ' ')}: ${line}`)
+            .join('\n');
+          
+          return `File: ${input.path} (lines ${input.start_line}-${end})\n\n${numberedSection}`;
+        } catch (err) {
+          return `Error reading file: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      }
+
+      case 'search_codebase': {
+        const input = toolInput as { pattern: string; file_pattern?: string };
+        
+        try {
+          // Use grep for fast searching
+          // -r = recursive, -n = line numbers, -I = skip binary files
+          const grepCmd = input.file_pattern
+            ? `cd "${repositoryPath}" && grep -rn --include="${input.file_pattern}" "${input.pattern.replace(/"/g, '\\"')}" . || true`
+            : `cd "${repositoryPath}" && grep -rn -I "${input.pattern.replace(/"/g, '\\"')}" . || true`;
+          
+          const { stdout } = await exec(grepCmd, { maxBuffer: 1024 * 1024 }); // 1MB limit
+          
+          if (!stdout.trim()) {
+            return `No matches found for pattern: ${input.pattern}`;
+          }
+          
+          // Limit results to prevent token overflow
+          const lines = stdout.trim().split('\n');
+          if (lines.length > 50) {
+            const truncated = lines.slice(0, 50).join('\n');
+            return `Found ${lines.length} matches (showing first 50):\n${truncated}`;
+          }
+          
+          return `Found ${lines.length} matches:\n${stdout.trim()}`;
+        } catch (err) {
+          return `Error searching codebase: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      }
+
+      case 'list_directory': {
+        const input = toolInput as { path: string };
+        const dirPath = path.join(repositoryPath, input.path);
+        
+        // Security check
+        const resolvedPath = path.resolve(dirPath);
+        const resolvedRepo = path.resolve(repositoryPath);
+        if (!resolvedPath.startsWith(resolvedRepo)) {
+          return `Error: Access denied - path outside repository`;
+        }
+        
+        try {
+          const entries = await fs.readdir(dirPath, { withFileTypes: true });
+          const formatted = entries
+            .map(entry => entry.isDirectory() ? `${entry.name}/` : entry.name)
+            .sort()
+            .join('\n');
+          
+          return `Contents of ${input.path}:\n${formatted}`;
+        } catch (err) {
+          return `Error listing directory: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      }
+
+      default:
+        return `Error: Unknown tool: ${toolName}`;
+    }
+  } catch (err) {
+    return `Error executing tool: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
 
 // ── Entry point ────────────────────────────────────────────────────────────────
 
@@ -190,14 +454,48 @@ async function reviewPerFile(
   options: ReviewOptions,
 ): Promise<ReviewResult> {
   const files = splitDiffByFile(options.diff);
-  const maxFiles = options.maxFiles ?? DEFAULT_MAX_FILES;
-  const filesToReview = files.slice(0, maxFiles);
-  const skipped = files.length - filesToReview.length;
-
-  console.log(`Per-file review: ${filesToReview.length} files${skipped > 0 ? ` (${skipped} skipped — limit ${maxFiles})` : ''}`);
+  
+  // Intelligent file selection
+  const { selected, skipped } = selectFilesToReview(files, options);
+  
+  // Log selection summary
+  console.log(`\n📋 File Selection Summary:`);
+  console.log(`  Total files in PR: ${files.length}`);
+  console.log(`  Selected for review: ${selected.length}`);
+  
+  if (skipped.length > 0) {
+    console.log(`  Skipped: ${skipped.length}`);
+    
+    // Group skipped files by reason
+    const byReason = skipped.reduce((acc, { reason }) => {
+      acc[reason] = (acc[reason] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    for (const [reason, count] of Object.entries(byReason)) {
+      console.log(`    - ${count} file(s): ${reason}`);
+    }
+    
+    // Show individual skipped files if verbose
+    if (skipped.length <= 5) {
+      console.log(`\n  Skipped files:`);
+      skipped.forEach(({ file, reason }) => {
+        console.log(`    - ${file} (${reason})`);
+      });
+    }
+  }
+  
+  // Show selected files with priorities
+  console.log(`\n  Files to review (by priority):`);
+  selected.forEach((analysis, idx) => {
+    const badge = analysis.priority >= 70 ? '🔴' : analysis.priority >= 60 ? '🟠' : '🟢';
+    console.log(`    ${idx + 1}. ${badge} ${analysis.file} (priority: ${analysis.priority}, +${analysis.additions}/-${analysis.deletions})`);
+  });
+  console.log('');
 
   const fileFindings: Array<{ file: string; findings: string }> = [];
   const allReasoning: string[] = [];
+  const allStructuredFindings: Finding[] = [];
   let totalUsage: TokenUsage = {
     inputTokens: 0,
     outputTokens: 0,
@@ -205,33 +503,78 @@ async function reviewPerFile(
     estimatedCost: 0,
     model: options.model ?? DEFAULT_MODEL,
   };
+  
+  // Check if skills mode is enabled
+  const useSkills = options.enableSkills && options.skills && options.skills.length > 0;
+  
+  if (useSkills) {
+    console.log(`\n🎯 Skills Mode: ${options.skills!.join(', ')}`);
+    if (options.skillAutoDetect) {
+      console.log(`   Auto-detection: enabled`);
+    }
+  }
 
-  for (const { file, diff } of filesToReview) {
-    const { findings, reasoning, usage } = await reviewSingleFile(client, options, file, diff);
-    fileFindings.push({ file, findings });
+  // Process files (with batching for parallel execution)
+  const BATCH_SIZE = 3; // Process 3 files at a time
+  const batches: FileAnalysis[][] = [];
+  for (let i = 0; i < selected.length; i += BATCH_SIZE) {
+    batches.push(selected.slice(i, i + BATCH_SIZE));
+  }
+  
+  for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+    const batch = batches[batchIdx];
+    console.log(`\n📦 Batch ${batchIdx + 1}/${batches.length}: Processing ${batch.length} file(s)...`);
     
-    if (reasoning.length > 0) {
-      allReasoning.push(`File: ${file}`, ...reasoning);
-    }
+    // Process batch in parallel
+    const batchResults = await Promise.all(
+      batch.map(async (analysis) => {
+        if (useSkills) {
+          return await reviewFileWithSkills(client, options, analysis);
+        } else {
+          const { findings, reasoning, usage } = await reviewSingleFile(
+            client,
+            options,
+            analysis.file,
+            analysis.diff
+          );
+          return {
+            file: analysis.file,
+            findings,
+            reasoning,
+            usage,
+            skillResults: [],
+          };
+        }
+      })
+    );
     
-    if (usage) {
-      totalUsage.inputTokens += usage.inputTokens;
-      totalUsage.outputTokens += usage.outputTokens;
-      totalUsage.totalTokens += usage.totalTokens;
-      totalUsage.estimatedCost += usage.estimatedCost;
-      if (usage.cacheReadTokens) {
-        totalUsage.cacheReadTokens = (totalUsage.cacheReadTokens || 0) + usage.cacheReadTokens;
+    // Aggregate batch results
+    for (const result of batchResults) {
+      fileFindings.push({ file: result.file, findings: result.findings });
+      
+      if (result.reasoning && result.reasoning.length > 0) {
+        allReasoning.push(`File: ${result.file}`, ...result.reasoning);
       }
-      if (usage.cacheCreationTokens) {
-        totalUsage.cacheCreationTokens = (totalUsage.cacheCreationTokens || 0) + usage.cacheCreationTokens;
+      
+      if (result.usage) {
+        totalUsage.inputTokens += result.usage.inputTokens;
+        totalUsage.outputTokens += result.usage.outputTokens;
+        totalUsage.totalTokens += result.usage.totalTokens;
+        totalUsage.estimatedCost += result.usage.estimatedCost;
+        if (result.usage.cacheReadTokens) {
+          totalUsage.cacheReadTokens = (totalUsage.cacheReadTokens || 0) + result.usage.cacheReadTokens;
+        }
+        if (result.usage.cacheCreationTokens) {
+          totalUsage.cacheCreationTokens = (totalUsage.cacheCreationTokens || 0) + result.usage.cacheCreationTokens;
+        }
       }
+      
+      console.log(`  ✓ reviewed: ${result.file}`);
     }
-    
-    console.log(`  reviewed: ${file}`);
   }
 
   const { fullComment, reasoning: synthReasoning, usage: synthUsage } = 
-    await synthesizeFindings(client, options, fileFindings, skipped);
+    await synthesizeFindings(client, options, fileFindings, skipped.length);
 
   // Combine synthesis reasoning and usage
   if (synthReasoning.length > 0) {
@@ -257,6 +600,7 @@ async function reviewPerFile(
   const result = buildResult(fullComment, options.diff);
   result.reasoning = allReasoning;
   result.usage = totalUsage;
+  result.structuredFindings = allStructuredFindings;
 
   return result;
 }
@@ -271,67 +615,425 @@ async function reviewSingleFile(
   const truncated = truncateDiff(diff, Math.floor(maxLines / 3));
   const model = options.model ?? DEFAULT_MODEL;
 
-  const system = `You are reviewing a single file's changes in a pull request.
+  // Enhanced system prompt with tool awareness
+  const toolGuidance = options.enableTools && options.repositoryPath
+    ? `\n\nTOOLS AVAILABLE:
+You have access to these tools to gather additional context:
+- read_full_file: Read the complete contents of any file in the repository
+- read_file_section: Read a specific line range from a file
+- search_codebase: Search for patterns across the entire codebase
+- list_directory: List contents of a directory
 
-CRITICAL - Anti-Hallucination Rules:
-- Focus ONLY on the changes visible in this file's diff (lines with + or -)
-- DO NOT reference code, functions, or variables not shown in the diff
-- DO NOT make assumptions about the rest of the file or codebase
-- If you cannot verify something from the visible diff, use phrases like "Verify that..." or "Check if..."
+USE TOOLS JUDICIOUSLY:
+- Only use tools when needed for deeper understanding
+- Prefer staying grounded in the visible diff
+- Tool results add to token cost - use sparingly
+- If unsure whether you need a tool, you probably don't
 
-Be concise — list only real issues as bullet points.
-Do not repeat the code, do not summarize unchanged logic.
-Categories to use if relevant: Bugs, Security, Performance, Style.
-If the file looks fine, say "No issues." in one line.`;
+WHEN TO USE TOOLS:
+✅ Need to see how a function is defined elsewhere
+✅ Want to verify if tests exist for changed code
+✅ Need to understand a complex type definition
+✅ Looking for similar patterns in other files
+❌ Just curious about unrelated code
+❌ For issues already clear from the diff`
+    : '';
 
-  const user = [
-    `## PR: ${options.prTitle}`,
-    options.additionalContext ? `**Context:** ${options.additionalContext}` : '',
-    '',
-    `## File: \`${file}\``,
-    '```diff',
-    truncated,
-    '```',
-    '',
-    'List any issues with this file change. Be brief.',
-  ].filter(l => l !== undefined).join('\n');
+  const system = `You are a precise code reviewer analyzing a single file's changes.
+
+YOUR TASK: Analyze ONLY the visible diff and produce a structured JSON report.
+
+CRITICAL RULES - Anti-Hallucination:
+1. ONLY analyze lines that start with + or - in the diff
+2. For EVERY finding, you MUST quote the exact diff line(s) being referenced
+3. DO NOT reference code, functions, or variables not visible in the diff unless you used a tool to read them
+4. DO NOT make assumptions about code outside the visible changes
+5. If you cannot fully assess something from the visible diff, mark it as "info" severity with "Verify:" prefix${toolGuidance}
+
+STRUCTURED OUTPUT REQUIRED:
+Return ONLY a valid JSON object with this exact structure:
+
+{
+  "reasoning": [
+    {
+      "phase": "Initial Scan",
+      "observation": "What I see in the diff",
+      "conclusion": "What this means"
+    },
+    {
+      "phase": "Security Analysis",
+      "observation": "Security-relevant observations",
+      "conclusion": "Security assessment"
+    },
+    {
+      "phase": "Pattern Detection",
+      "observation": "Patterns or anti-patterns found",
+      "conclusion": "Impact and recommendations"
+    }
+  ],
+  "findings": [
+    {
+      "severity": "critical|high|medium|low|info",
+      "category": "bug|security|performance|style|best-practice",
+      "title": "Brief title (max 60 chars)",
+      "description": "Detailed explanation referencing visible diff",
+      "file": "${file}",
+      "diffLines": "Exact diff line(s) being discussed - MANDATORY",
+      "suggestion": "How to fix (optional)"
+    }
+  ]
+}
+
+If no issues found, return:
+{
+  "reasoning": [{"phase": "Analysis", "observation": "Reviewed changes", "conclusion": "No issues found"}],
+  "findings": []
+}
+
+SEVERITY GUIDELINES:
+- critical: Security vulnerabilities, data loss, crashes
+- high: Bugs that affect functionality
+- medium: Performance issues, poor error handling
+- low: Code quality, minor inefficiencies
+- info: Things that need verification outside the visible diff`;
+
+  const userPrompt = `## PR: ${options.prTitle}
+${options.additionalContext ? `**Context:** ${options.additionalContext}` : ''}
+
+## File: \`${file}\`
+
+\`\`\`diff
+${truncated}
+\`\`\`
+
+Analyze the above diff and return valid JSON following the schema.`;
 
   // When reasoning is enabled, max_tokens must be > budget_tokens
   // Use higher limit to accommodate thinking output + response
-  const maxTokens = options.enableReasoning ? 2048 : 512;
+  const maxTokens = options.enableReasoning ? 4096 : 2048;
 
   const messageParams: Anthropic.MessageCreateParamsNonStreaming = {
     model,
     max_tokens: maxTokens,
     system,
-    messages: [{ role: 'user', content: user }],
+    messages: [{ role: 'user', content: userPrompt }],
   };
 
   // Enable extended thinking if requested
-  // Note: Anthropic requires minimum 1024 tokens for thinking budget
-  // and max_tokens must be greater than budget_tokens
   if (options.enableReasoning) {
     messageParams.thinking = {
       type: 'enabled',
-      budget_tokens: 1024,
+      budget_tokens: 2048,
     };
   }
 
-  const message = await client.messages.create(messageParams);
-
-  const reasoning = extractReasoning(message);
-  const usage = extractUsage(message, model);
-
-  // Log reasoning for this file
-  if (reasoning.length > 0) {
-    logReasoning(reasoning, `File: ${file}`);
+  // Enable tools if requested and repository path is available
+  if (options.enableTools && options.repositoryPath) {
+    messageParams.tools = CODE_READING_TOOLS;
   }
 
-  return {
-    findings: extractText(message),
-    reasoning,
-    usage,
+  // Tool calling loop - handle up to 5 iterations
+  const MAX_TOOL_ITERATIONS = 5;
+  let iteration = 0;
+  let message: Anthropic.Message;
+  const conversationHistory: Anthropic.MessageParam[] = [
+    { role: 'user', content: userPrompt },
+  ];
+  let totalUsage: TokenUsage = {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    estimatedCost: 0,
+    model,
   };
+  const allReasoning: string[] = [];
+  const toolCalls: Array<{ tool: string; input: unknown; result: string }> = [];
+
+  while (iteration < MAX_TOOL_ITERATIONS) {
+    messageParams.messages = conversationHistory;
+    message = await client.messages.create(messageParams);
+
+    // Accumulate usage
+    const iterationUsage = extractUsage(message, model);
+    totalUsage.inputTokens += iterationUsage.inputTokens;
+    totalUsage.outputTokens += iterationUsage.outputTokens;
+    totalUsage.totalTokens += iterationUsage.totalTokens;
+    totalUsage.estimatedCost += iterationUsage.estimatedCost;
+
+    // Collect reasoning from this iteration
+    const iterationReasoning = extractReasoning(message);
+    if (iterationReasoning.length > 0) {
+      allReasoning.push(...iterationReasoning);
+    }
+
+    // Check if the AI wants to use tools
+    const hasToolUse = message.content.some(block => block.type === 'tool_use');
+    
+    if (!hasToolUse) {
+      // No tool use - we're done
+      break;
+    }
+
+    if (!options.repositoryPath) {
+      console.log('⚠️  AI requested tools but repositoryPath not configured');
+      break;
+    }
+
+    // Execute all tool calls
+    const toolResults: Anthropic.ToolResultBlockParam[] = [];
+    
+    for (const block of message.content) {
+      if (block.type === 'tool_use') {
+        const toolName = block.name;
+        const toolInput = block.input;
+        const toolUseId = block.id;
+
+        console.log(`\n🔧 Tool Call [${file}]: ${toolName}(${JSON.stringify(toolInput)})`);
+        
+        const result = await executeTool(toolName, toolInput, options.repositoryPath);
+        
+        // Limit result size to prevent token overflow
+        const truncatedResult = result.length > 5000 
+          ? result.substring(0, 5000) + '\n\n... (truncated)'
+          : result;
+        
+        console.log(`📤 Tool Result: ${truncatedResult.substring(0, 200)}${truncatedResult.length > 200 ? '...' : ''}`);
+        
+        toolCalls.push({
+          tool: toolName,
+          input: toolInput,
+          result: truncatedResult,
+        });
+
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: toolUseId,
+          content: truncatedResult,
+        });
+      }
+    }
+
+    // Add assistant's tool use to conversation
+    conversationHistory.push({
+      role: 'assistant',
+      content: message.content,
+    });
+
+    // Add tool results to conversation
+    conversationHistory.push({
+      role: 'user',
+      content: toolResults,
+    });
+
+    iteration++;
+  }
+
+  if (iteration >= MAX_TOOL_ITERATIONS) {
+    console.log(`⚠️  Reached max tool iterations (${MAX_TOOL_ITERATIONS}) for ${file}`);
+  }
+
+  // Log final reasoning
+  if (allReasoning.length > 0) {
+    logReasoning(allReasoning, `File: ${file}`);
+  }
+
+  // Log tool usage summary
+  if (toolCalls.length > 0) {
+    console.log(`\n🛠️  Tool Usage Summary [${file}]:`);
+    const byTool = toolCalls.reduce((acc, call) => {
+      acc[call.tool] = (acc[call.tool] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    for (const [tool, count] of Object.entries(byTool)) {
+      console.log(`  - ${tool}: ${count} call(s)`);
+    }
+  }
+
+  const responseText = extractText(message!);
+  
+  // Parse and validate JSON response
+  const structured = parseStructuredResponse(responseText, file);
+  
+  // Log structured reasoning steps
+  if (structured.reasoning && structured.reasoning.length > 0) {
+    console.log(`\n📊 Structured Analysis — ${file}:`);
+    structured.reasoning.forEach((step, idx) => {
+      console.log(`\n[${step.phase}]`);
+      console.log(`  Observation: ${step.observation}`);
+      console.log(`  Conclusion: ${step.conclusion}`);
+    });
+    console.log('');
+  }
+
+  // Convert structured findings to markdown
+  const markdown = structuredToMarkdown(structured, file);
+
+  return {
+    findings: markdown,
+    reasoning: allReasoning,
+    usage: totalUsage,
+  };
+}
+
+// ── Skills-based Review ────────────────────────────────────────────────────────
+
+async function reviewFileWithSkills(
+  client: AnthropicLike,
+  options: ReviewOptions,
+  fileAnalysis: FileAnalysis,
+): Promise<{
+  file: string;
+  findings: string;
+  reasoning: string[];
+  usage: TokenUsage | null;
+  skillResults: any[];
+}> {
+  const { selectSkillsForFile, executeSkillsParallel, mergeSkillResults } = require('./skills');
+  
+  const { file, diff } = fileAnalysis;
+  
+  // Select skills for this file
+  const requestedSkills = options.skills || [];
+  const selectedSkills = selectSkillsForFile(
+    file,
+    diff,
+    requestedSkills,
+    options.skillAutoDetect ?? true
+  );
+  
+  if (selectedSkills.length === 0) {
+    // No skills matched - fall back to general review
+    console.log(`  [${file}] No skills matched, using general review`);
+    return await reviewSingleFile(client, options, file, diff);
+  }
+  
+  // Execute skills in parallel
+  const skillResults = await executeSkillsParallel(
+    selectedSkills,
+    file,
+    diff,
+    client,
+    {
+      model: options.model,
+      enableReasoning: options.enableReasoning,
+      enableTools: options.enableTools,
+      repositoryPath: options.repositoryPath,
+      prTitle: options.prTitle,
+      additionalContext: options.additionalContext,
+    }
+  );
+  
+  // Merge results
+  const merged = mergeSkillResults(skillResults);
+  
+  // Convert to markdown
+  const markdown = formatSkillFindings(merged, file);
+  
+  // Aggregate token usage
+  const totalUsage: TokenUsage = {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: merged.totalTokens,
+    estimatedCost: calculateCost(merged.totalTokens, options.model ?? DEFAULT_MODEL),
+    model: options.model ?? DEFAULT_MODEL,
+  };
+  
+  for (const result of skillResults) {
+    if (result.tokenUsage) {
+      totalUsage.inputTokens += result.tokenUsage.inputTokens;
+      totalUsage.outputTokens += result.tokenUsage.outputTokens;
+    }
+  }
+  
+  // Aggregate reasoning
+  const allReasoning: string[] = [];
+  for (const result of skillResults) {
+    if (result.reasoning && result.reasoning.length > 0) {
+      allReasoning.push(`[${result.skillName}]`, ...result.reasoning);
+    }
+  }
+  
+  // Log skill performance
+  console.log(`  [${file}] Skills Summary:`);
+  for (const result of skillResults) {
+    const qualityPct = (result.qualityMetrics.qualityRate * 100).toFixed(0);
+    console.log(`    - ${result.skillName}: ${result.findings.length} findings (${qualityPct}% quality, ${result.executionTime}ms)`);
+  }
+  
+  return {
+    file,
+    findings: markdown,
+    reasoning: allReasoning,
+    usage: totalUsage,
+    skillResults,
+  };
+}
+
+/**
+ * Format skill findings into markdown
+ */
+function formatSkillFindings(merged: any, file: string): string {
+  const lines: string[] = [];
+  
+  if (merged.allFindings.length === 0) {
+    return `### \`${file}\`\n\n✅ No issues found by skills.\n`;
+  }
+  
+  lines.push(`### \`${file}\`\n`);
+  
+  // Group by severity
+  const bySeverity: Record<string, any[]> = {};
+  for (const finding of merged.allFindings) {
+    if (!bySeverity[finding.severity]) {
+      bySeverity[finding.severity] = [];
+    }
+    bySeverity[finding.severity].push(finding);
+  }
+  
+  const severityOrder = ['critical', 'high', 'medium', 'low', 'info'];
+  
+  for (const severity of severityOrder) {
+    const findings = bySeverity[severity];
+    if (!findings || findings.length === 0) continue;
+    
+    const emoji = {
+      critical: '🔴',
+      high: '🟠',
+      medium: '🟡',
+      low: '🔵',
+      info: 'ℹ️',
+    }[severity] || '•';
+    
+    for (const finding of findings) {
+      lines.push(`${emoji} **[${finding.category}]** ${finding.title}`);
+      lines.push(`  ${finding.description}`);
+      
+      if (finding.diffLines) {
+        lines.push(`  \`\`\`diff`);
+        lines.push(`  ${finding.diffLines}`);
+        lines.push(`  \`\`\``);
+      }
+      
+      if (finding.suggestion) {
+        lines.push(`  💡 *Suggestion:* ${finding.suggestion}`);
+      }
+      
+      lines.push('');
+    }
+  }
+  
+  return lines.join('\n').trim();
+}
+
+/**
+ * Calculate cost for token count
+ */
+function calculateCost(tokens: number, model: string): number {
+  const pricing = MODEL_PRICING[model] || MODEL_PRICING[DEFAULT_MODEL];
+  // Rough estimate assuming 50/50 input/output split
+  const inputCost = (tokens * 0.5 / 1_000_000) * pricing.input;
+  const outputCost = (tokens * 0.5 / 1_000_000) * pricing.output;
+  return inputCost + outputCost;
 }
 
 async function synthesizeFindings(
@@ -438,6 +1140,239 @@ export function splitDiffByFile(diff: string): Array<{ file: string; diff: strin
       const file = match ? match[1].trim() : 'unknown';
       return { file, diff: section };
     });
+}
+
+// ── Intelligent file selection ────────────────────────────────────────────────
+
+// Default patterns for files that should typically be skipped
+const DEFAULT_SKIP_PATTERNS = [
+  // Lock files and dependencies
+  'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'Gemfile.lock', 'Cargo.lock', 'go.sum', 'poetry.lock',
+  // Minified/bundled files
+  '*.min.js', '*.min.css', '*.bundle.js', '*.chunk.js',
+  // Generated documentation
+  'docs/api/**', 'docs/generated/**',
+  // Build artifacts
+  'dist/**', 'build/**', 'out/**', 'target/**', '.next/**',
+  // IDE files
+  '.vscode/**', '.idea/**', '*.iml',
+  // Binary/media files (usually detected by diff, but patterns as backup)
+  '*.png', '*.jpg', '*.jpeg', '*.gif', '*.ico', '*.pdf', '*.zip', '*.tar.gz',
+];
+
+// Default patterns for high-priority files
+const DEFAULT_PRIORITY_PATTERNS = [
+  // Security-sensitive
+  '**/*auth*', '**/*password*', '**/*crypto*', '**/*security*', '**/*permission*',
+  // Core configuration
+  '*.config.js', '*.config.ts', 'Dockerfile', 'docker-compose.yml',
+  // Infrastructure as code
+  '*.tf', '*.tfvars', 'cloudformation/**', 'terraform/**',
+  // Database migrations
+  '**/migrations/**', '**/migrate/**',
+];
+
+/**
+ * Analyze a file's diff to determine if it should be reviewed and its priority
+ */
+function analyzeFile(
+  fileEntry: { file: string; diff: string },
+  options: ReviewOptions,
+): FileAnalysis {
+  const { file, diff } = fileEntry;
+  
+  const lines = diff.split('\n');
+  let additions = 0;
+  let deletions = 0;
+  let totalLines = lines.length;
+  let isBinary = false;
+  
+  // Count additions/deletions and detect binary
+  for (const line of lines) {
+    if (line.startsWith('+') && !line.startsWith('+++')) {
+      additions++;
+    } else if (line.startsWith('-') && !line.startsWith('---')) {
+      deletions++;
+    } else if (line.includes('Binary files') || line.includes('GIT binary patch')) {
+      isBinary = true;
+    }
+  }
+  
+  const analysis: FileAnalysis = {
+    file,
+    diff,
+    additions,
+    deletions,
+    totalLines,
+    isBinary,
+    priority: 50,  // Default priority
+  };
+  
+  // Check for skip conditions
+  const skipReason = getSkipReason(file, analysis, options);
+  if (skipReason) {
+    analysis.skipReason = skipReason;
+    return analysis;
+  }
+  
+  // Calculate priority
+  analysis.priority = calculatePriority(file, analysis, options);
+  
+  return analysis;
+}
+
+/**
+ * Determine if a file should be skipped and why
+ */
+function getSkipReason(
+  file: string,
+  analysis: FileAnalysis,
+  options: ReviewOptions,
+): string | undefined {
+  // Binary files
+  if (analysis.isBinary) {
+    return 'binary file';
+  }
+  
+  // Very large files (>2000 lines changed)
+  const totalChanges = analysis.additions + analysis.deletions;
+  if (totalChanges > 2000) {
+    return `too large (${totalChanges} lines changed)`;
+  }
+  
+  // Check custom skip patterns
+  const skipPatterns = options.skipPatterns || [];
+  for (const pattern of skipPatterns) {
+    if (matchesPattern(file, pattern)) {
+      return `matches skip pattern: ${pattern}`;
+    }
+  }
+  
+  // Check default skip patterns
+  for (const pattern of DEFAULT_SKIP_PATTERNS) {
+    if (matchesPattern(file, pattern)) {
+      return `generated/dependency file`;
+    }
+  }
+  
+  return undefined;
+}
+
+/**
+ * Calculate priority score for a file (0-100, higher = more important)
+ */
+function calculatePriority(
+  file: string,
+  analysis: FileAnalysis,
+  options: ReviewOptions,
+): number {
+  let priority = 50;  // Base priority
+  
+  // Custom priority patterns (highest weight)
+  const priorityPatterns = options.priorityPatterns || [];
+  for (const pattern of priorityPatterns) {
+    if (matchesPattern(file, pattern)) {
+      priority += 40;
+      break;
+    }
+  }
+  
+  // Default high-priority patterns
+  for (const pattern of DEFAULT_PRIORITY_PATTERNS) {
+    if (matchesPattern(file, pattern)) {
+      priority += 30;
+      break;
+    }
+  }
+  
+  // Security-sensitive keywords in path
+  if (/auth|password|crypto|security|permission|token|secret/i.test(file)) {
+    priority += 20;
+  }
+  
+  // Configuration files are important
+  if (/\.config\.|Dockerfile|docker-compose|\.tf|\.tfvars|\.env/i.test(file)) {
+    priority += 15;
+  }
+  
+  // Core source files (not tests)
+  if (/\.(ts|js|py|go|rs|java|rb|php)$/.test(file) && !/test|spec|mock/i.test(file)) {
+    priority += 10;
+  }
+  
+  // SQL/migration files
+  if (/\.sql$|migration|migrate/i.test(file)) {
+    priority += 15;
+  }
+  
+  // Test files are lower priority
+  if (/test|spec|mock|__tests__/i.test(file)) {
+    priority -= 10;
+  }
+  
+  // Documentation is lower priority
+  if (file.startsWith('docs/') || file.endsWith('.md')) {
+    priority -= 5;
+  }
+  
+  return Math.max(0, Math.min(100, priority));
+}
+
+/**
+ * Simple glob-style pattern matching
+ */
+function matchesPattern(file: string, pattern: string): boolean {
+  // Convert glob pattern to regex
+  const regexPattern = pattern
+    .replace(/\*\*/g, '___DOUBLESTAR___')
+    .replace(/\*/g, '[^/]*')
+    .replace(/___DOUBLESTAR___/g, '.*')
+    .replace(/\./g, '\\.')
+    .replace(/\?/g, '.');
+  
+  const regex = new RegExp(`^${regexPattern}$`);
+  return regex.test(file);
+}
+
+/**
+ * Select files to review with intelligent prioritization
+ */
+function selectFilesToReview(
+  files: Array<{ file: string; diff: string }>,
+  options: ReviewOptions,
+): {
+  selected: FileAnalysis[];
+  skipped: Array<{ file: string; reason: string }>;
+} {
+  const maxFiles = options.maxFiles ?? DEFAULT_MAX_FILES;
+  
+  // Analyze all files
+  const analyzed = files.map(f => analyzeFile(f, options));
+  
+  // Separate skipped files
+  const skipped: Array<{ file: string; reason: string }> = [];
+  const reviewable: FileAnalysis[] = [];
+  
+  for (const analysis of analyzed) {
+    if (analysis.skipReason) {
+      skipped.push({ file: analysis.file, reason: analysis.skipReason });
+    } else {
+      reviewable.push(analysis);
+    }
+  }
+  
+  // Sort reviewable files by priority (highest first)
+  reviewable.sort((a, b) => b.priority - a.priority);
+  
+  // Take top N files
+  const selected = reviewable.slice(0, maxFiles);
+  
+  // Add remaining reviewable files to skipped
+  for (const file of reviewable.slice(maxFiles)) {
+    skipped.push({ file: file.file, reason: 'exceeded max files limit' });
+  }
+  
+  return { selected, skipped };
 }
 
 function buildSystemPrompt(): string {
@@ -853,5 +1788,164 @@ function logUsage(usage: TokenUsage, context: string): void {
   console.log(`  Total tokens: ${usage.totalTokens.toLocaleString()}`);
   console.log(`  Estimated cost: $${usage.estimatedCost.toFixed(4)}`);
   console.log('');
+}
+
+// ── Structured output processing ──────────────────────────────────────────────
+
+/**
+ * Parse and validate structured JSON response from AI
+ */
+function parseStructuredResponse(responseText: string, file: string): StructuredReview {
+  try {
+    // Try to extract JSON from response (may be wrapped in markdown code blocks)
+    let jsonText = responseText.trim();
+    
+    // Remove markdown code fences if present
+    if (jsonText.startsWith('```json')) {
+      jsonText = jsonText.replace(/^```json\s*\n/, '').replace(/\n```\s*$/, '');
+    } else if (jsonText.startsWith('```')) {
+      jsonText = jsonText.replace(/^```\s*\n/, '').replace(/\n```\s*$/, '');
+    }
+    
+    const parsed = JSON.parse(jsonText);
+    
+    // Validate structure
+    if (!parsed.findings || !Array.isArray(parsed.findings)) {
+      console.warn(`⚠️  Invalid JSON structure for ${file}, using fallback`);
+      return createFallbackStructure(responseText, file);
+    }
+    
+    // Ensure all findings have required fields
+    const findings: Finding[] = parsed.findings.map((f: any) => ({
+      severity: f.severity || 'info',
+      category: f.category || 'style',
+      title: f.title || 'Issue',
+      description: f.description || '',
+      file: f.file || file,
+      diffLines: f.diffLines || f.diff_lines,  // Support snake_case too
+      suggestion: f.suggestion,
+    }));
+    
+    // Build metadata
+    const severityCounts = findings.reduce((acc, f) => {
+      acc[f.severity] = (acc[f.severity] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    return {
+      summary: parsed.summary || 'Review complete',
+      findings,
+      reasoning: parsed.reasoning || [],
+      metadata: {
+        filesAnalyzed: [file],
+        totalFindings: findings.length,
+        criticalCount: severityCounts.critical || 0,
+        highCount: severityCounts.high || 0,
+        mediumCount: severityCounts.medium || 0,
+        lowCount: severityCounts.low || 0,
+      },
+    };
+  } catch (error) {
+    console.warn(`⚠️  Failed to parse JSON for ${file}:`, error instanceof Error ? error.message : String(error));
+    return createFallbackStructure(responseText, file);
+  }
+}
+
+/**
+ * Create fallback structure when JSON parsing fails
+ */
+function createFallbackStructure(text: string, file: string): StructuredReview {
+  return {
+    summary: 'Review completed (fallback mode)',
+    findings: [],
+    reasoning: [{
+      phase: 'Fallback',
+      observation: 'JSON parsing failed',
+      conclusion: text.slice(0, 200) + (text.length > 200 ? '...' : ''),
+    }],
+    metadata: {
+      filesAnalyzed: [file],
+      totalFindings: 0,
+      criticalCount: 0,
+      highCount: 0,
+      mediumCount: 0,
+      lowCount: 0,
+    },
+  };
+}
+
+/**
+ * Convert structured findings to markdown format
+ */
+function structuredToMarkdown(structured: StructuredReview, file: string): string {
+  if (structured.findings.length === 0) {
+    return 'No issues.';
+  }
+  
+  const lines: string[] = [];
+  
+  // Group by severity
+  const bySeverity: Record<string, Finding[]> = {};
+  for (const finding of structured.findings) {
+    const sev = finding.severity;
+    if (!bySeverity[sev]) bySeverity[sev] = [];
+    bySeverity[sev].push(finding);
+  }
+  
+  // Output in severity order
+  const severityOrder = ['critical', 'high', 'medium', 'low', 'info'];
+  for (const severity of severityOrder) {
+    const findings = bySeverity[severity];
+    if (!findings || findings.length === 0) continue;
+    
+    const emoji = {
+      critical: '🔴',
+      high: '🟠',
+      medium: '🟡',
+      low: '🔵',
+      info: 'ℹ️',
+    }[severity] || '•';
+    
+    for (const finding of findings) {
+      lines.push(`${emoji} **[${finding.category}]** ${finding.title}`);
+      lines.push(`  ${finding.description}`);
+      
+      if (finding.diffLines) {
+        lines.push(`  \`\`\`diff`);
+        lines.push(`  ${finding.diffLines}`);
+        lines.push(`  \`\`\``);
+      }
+      
+      if (finding.suggestion) {
+        lines.push(`  💡 *Suggestion:* ${finding.suggestion}`);
+      }
+      
+      lines.push('');
+    }
+  }
+  
+  return lines.join('\n').trim();
+}
+
+/**
+ * Validate structured findings against diff
+ */
+function validateStructuredFindings(findings: Finding[], diff: string): string[] {
+  const warnings: string[] = [];
+  
+  for (const finding of findings) {
+    // Check 1: If diffLines is provided, verify it exists in the actual diff
+    if (finding.diffLines) {
+      const quotedLine = finding.diffLines.trim();
+      if (!diff.includes(quotedLine)) {
+        warnings.push(`Finding "${finding.title}" quotes diff line not in actual diff: "${quotedLine.slice(0, 50)}..."`);
+      }
+    } else if (finding.severity !== 'info') {
+      // Check 2: Non-info findings should have diffLines citations
+      warnings.push(`Finding "${finding.title}" lacks diff line citation (severity: ${finding.severity})`);
+    }
+  }
+  
+  return warnings;
 }
 

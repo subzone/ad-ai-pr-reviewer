@@ -29,6 +29,11 @@ async function run(): Promise<void> {
     const aiReviewMode = (tl.getInput('aiReviewMode', false) ?? 'standard') as 'standard' | 'per-file';
     const aiMaxFiles = parseInt(tl.getInput('aiMaxFiles', false) ?? '10', 10);
     const aiEnableReasoning = tl.getBoolInput('aiEnableReasoning', false);
+    const aiEnableTools = tl.getBoolInput('aiEnableTools', false);
+    const aiEnableSkills = tl.getBoolInput('aiEnableSkills', false);
+    const aiSkills = tl.getInput('aiSkills', false) ?? 'security,performance';
+    const aiSkillAutoDetect = tl.getBoolInput('aiSkillAutoDetect', false);
+    const repositoryPath = tl.getVariable('Build.SourcesDirectory') || process.cwd();
 
     // ── AI provider config ────────────────────────────────────────────────────
     const aiProviderConfig = enableAiReview
@@ -57,6 +62,11 @@ async function run(): Promise<void> {
           aiReviewMode,
           aiMaxFiles,
           aiEnableReasoning,
+          aiEnableTools,
+          aiEnableSkills,
+          aiSkills,
+          aiSkillAutoDetect,
+          repositoryPath,
         });
         break;
 
@@ -75,6 +85,11 @@ async function run(): Promise<void> {
           aiReviewMode,
           aiMaxFiles,
           aiEnableReasoning,
+          aiEnableTools,
+          aiEnableSkills,
+          aiSkills,
+          aiSkillAutoDetect,
+          repositoryPath,
         });
         break;
       }
@@ -117,6 +132,11 @@ interface CreatePRParams {
   aiReviewMode: 'standard' | 'per-file';
   aiMaxFiles: number;
   aiEnableReasoning: boolean;
+  aiEnableTools: boolean;
+  aiEnableSkills: boolean;
+  aiSkills: string;
+  aiSkillAutoDetect: boolean;
+  repositoryPath: string;
 }
 
 async function handleCreatePR(params: CreatePRParams): Promise<void> {
@@ -124,7 +144,8 @@ async function handleCreatePR(params: CreatePRParams): Promise<void> {
     provider, repository, sourceBranch, targetBranch,
     prTitle, prDescription, failOnExistingPR,
     enableAiReview, aiProviderConfig, aiModel, aiReviewContext, aiMaxDiffLines,
-    aiReviewMode, aiMaxFiles, aiEnableReasoning,
+    aiReviewMode, aiMaxFiles, aiEnableReasoning, aiEnableTools,
+    aiEnableSkills, aiSkills, aiSkillAutoDetect, repositoryPath,
   } = params;
 
   console.log(`Checking for existing PR: ${sourceBranch} → ${targetBranch} in ${repository}`);
@@ -144,7 +165,7 @@ async function handleCreatePR(params: CreatePRParams): Promise<void> {
         provider, repository, prNumber: existing.number,
         prTitle: existing.title, prDescription,
         aiProviderConfig, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
-        aiEnableReasoning,
+        aiEnableReasoning, aiEnableTools, aiEnableSkills, aiSkills, aiSkillAutoDetect, repositoryPath,
       });
     }
     return;
@@ -164,7 +185,7 @@ async function handleCreatePR(params: CreatePRParams): Promise<void> {
       provider, repository, prNumber: pr.number,
       prTitle: pr.title, prDescription,
       aiProviderConfig, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
-      aiEnableReasoning,
+      aiEnableReasoning, aiEnableTools, aiEnableSkills, aiSkills, aiSkillAutoDetect, repositoryPath,
     });
   }
 
@@ -184,6 +205,11 @@ interface ReviewPRParams {
   aiReviewMode: 'standard' | 'per-file';
   aiMaxFiles: number;
   aiEnableReasoning: boolean;
+  aiEnableTools: boolean;
+  aiEnableSkills: boolean;
+  aiSkills: string;
+  aiSkillAutoDetect: boolean;
+  repositoryPath: string;
 }
 
 async function handleReviewPR(params: ReviewPRParams): Promise<void> {
@@ -234,13 +260,18 @@ interface AiReviewParams {
   aiReviewMode: 'standard' | 'per-file';
   aiMaxFiles: number;
   aiEnableReasoning: boolean;
+  aiEnableTools: boolean;
+  aiEnableSkills: boolean;
+  aiSkills: string;
+  aiSkillAutoDetect: boolean;
+  repositoryPath: string;
 }
 
 async function runAiReview(params: AiReviewParams): Promise<void> {
   const {
     provider, repository, prNumber, prTitle, prDescription,
     aiProviderConfig, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
-    aiEnableReasoning,
+    aiEnableReasoning, aiEnableTools, aiEnableSkills, aiSkills, aiSkillAutoDetect, repositoryPath,
   } = params;
 
   console.log(`Fetching diff for PR #${prNumber}...`);
@@ -251,7 +282,18 @@ async function runAiReview(params: AiReviewParams): Promise<void> {
     return;
   }
 
-  console.log(`Running AI review — provider: ${aiProviderConfig.provider}, mode: ${aiReviewMode}, model: ${aiModel}${aiEnableReasoning ? ' (with reasoning)' : ''}`);
+  const flags = [
+    aiEnableReasoning ? 'reasoning' : null,
+    aiEnableTools ? 'tools' : null,
+    aiEnableSkills ? `skills(${aiSkills})` : null,
+  ].filter(Boolean).join(', ');
+  const flagsStr = flags ? ` (with ${flags})` : '';
+  console.log(`Running AI review — provider: ${aiProviderConfig.provider}, mode: ${aiReviewMode}, model: ${aiModel}${flagsStr}`);
+  
+  // Parse skill IDs
+  const { parseSkillIds } = require('./ai/skills');
+  const skillIds = aiEnableSkills ? parseSkillIds(aiSkills) : [];
+  
   const result = await reviewPullRequest(aiProviderConfig, {
     diff,
     prTitle,
@@ -262,6 +304,11 @@ async function runAiReview(params: AiReviewParams): Promise<void> {
     reviewMode: aiReviewMode,
     maxFiles: aiMaxFiles,
     enableReasoning: aiEnableReasoning,
+    enableTools: aiEnableTools,
+    enableSkills: aiEnableSkills,
+    skills: skillIds,
+    skillAutoDetect: aiSkillAutoDetect,
+    repositoryPath,
   });
 
   // Log validation warnings if present

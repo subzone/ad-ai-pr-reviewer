@@ -341,6 +341,186 @@ aiModel: claude-sonnet-4-6
 
 ---
 
+## Intelligent File Selection
+
+When using `aiReviewMode: per-file`, the system intelligently selects which files to review based on priority and relevance.
+
+### How It Works
+
+1. **Automatic Filtering** - Skips files that shouldn't be reviewed:
+   - 📦 Lock files (package-lock.json, yarn.lock, Gemfile.lock, etc.)
+   - 🔒 Binary files
+   - 📄 Generated/minified files (.min.js, .bundle.js, .map files)
+   - 📊 Very large files (>2000 lines changed)
+   - 🏗️ Build artifacts (dist/**, build/**, out/**)
+
+2. **Priority-Based Selection** - Reviews most important files first:
+   - 🔴 **High Priority** (70-100): Security files, auth, crypto, passwords
+   - 🟠 **Medium Priority** (60-69): Config, infrastructure, migrations
+   - 🟢 **Normal Priority** (50-59): Core source code
+   - 🔵 **Low Priority** (<50): Tests, documentation
+
+3. **Smart Reporting** - Shows what was selected and why:
+```
+📋 File Selection Summary:
+  Total files in PR: 28
+  Selected for review: 10
+  Skipped: 18
+    - 5 file(s): generated/dependency file
+    - 3 file(s): binary file
+    - 10 file(s): exceeded max files limit
+
+  Files to review (by priority):
+    1. 🔴 src/auth/login.ts (priority: 85, +45/-12)
+    2. 🔴 config/database.yml (priority: 75, +8/-3)
+    3. 🟠 terraform/main.tf (priority: 65, +120/-5)
+    4. 🟢 src/api/users.ts (priority: 60, +33/-8)
+    ...
+```
+
+### Default Skip Patterns
+
+Files matching these patterns are automatically skipped:
+
+- **Lock files:** `package-lock.json`, `yarn.lock`, `Gemfile.lock`, `Cargo.lock`, `composer.lock`, `pnpm-lock.yaml`
+- **Minified:** `*.min.js`, `*.min.css`, `*.bundle.js`
+- **Source maps:** `*.js.map`, `*.css.map`
+- **Build artifacts:** `dist/**`, `build/**`, `out/**`, `target/**`, `.next/**`
+- **Dependencies:** `node_modules/**`, `vendor/**`, `.bundle/**`
+- **Generated docs:** `CHANGELOG.md` (auto-generated), `*.generated.*`
+
+### Default Priority Patterns
+
+Files matching these patterns get higher priority:
+
+- **Security (priority +30):** `**/auth/**`, `**/security/**`, `**/password*`, `**/crypto*`, `**/*.secrets.*`
+- **Infrastructure (priority +20):** `*.tf` (Terraform), `*.tfvars`, `docker-compose.yml`, `Dockerfile`
+- **Config (priority +15):** `*.config.*`, `*.env.*`, `.env`, `settings.py`
+- **Database (priority +15):** `**/migrations/**`, `**/schema/**`, `*.sql`
+
+### Configuration
+
+Control file selection behavior:
+
+```yaml
+- task: AiPrReviewer@1
+  inputs:
+    aiReviewMode: per-file
+    aiMaxFiles: 10              # Maximum files to review (default: 10)
+```
+
+**Example output:**
+```
+Files to review (by priority):
+  1. 🔴 src/auth/password.ts (priority: 90, +25/-8)
+  2. 🔴 config/security.yml (priority: 80, +12/-3)
+  3. 🟠 infrastructure/main.tf (priority: 65, +45/-12)
+```
+
+> **Note:** File selection happens automatically. You cannot currently customize skip/priority patterns, but this may be added in a future version based on user feedback.
+
+---
+
+## AI Tool Calling
+
+When using `per-file` review mode, you can enable **AI tool calling** to allow agents to gather additional context beyond the visible diff.
+
+### What Are Tools?
+
+Tools are functions the AI can call to:
+- 📖 **read_full_file** - Read complete file contents for broader context
+- 📄 **read_file_section** - Read specific line ranges from files
+- 🔍 **search_codebase** - Search for patterns across the repository
+- 📁 **list_directory** - List contents of directories
+
+### When to Enable
+
+**Enable tools when:**
+- ✅ Reviewing complex changes that reference many other files
+- ✅ You want AI to verify if tests exist for changed code
+- ✅ Changes interact with code in other files
+- ✅ Security review needs to check external dependencies
+
+**Don't enable tools when:**
+- ❌ PRs are simple and self-contained
+- ❌ Token costs are a primary concern
+- ❌ You need fast turnaround
+
+### Configuration
+
+```yaml
+- task: AiPrReviewer@1
+  inputs:
+    enableAiReview: true
+    aiReviewMode: per-file       # Required for tools
+    aiEnableTools: true          # Enable tool calling
+```
+
+**Example output with tools:**
+```
+🔧 Tool Call [src/api/users.ts]: read_full_file({"path":"src/models/User.ts"})
+📤 Tool Result: File: src/models/User.ts
+
+   1: export interface User {
+   2:   id: string;
+   3:   email: string;
+   ...
+
+🛠️  Tool Usage Summary [src/api/users.ts]:
+  - read_full_file: 2 call(s)
+  - search_codebase: 1 call(s)
+```
+
+### How It Works
+
+1. **Agent analyzes diff** - Starts with visible changes
+2. **Identifies gaps** - Determines if additional context needed
+3. **Calls tools** - Requests specific files or searches
+4. **Receives results** - Gets tool output (truncated if large)
+5. **Continues analysis** - Uses tool results to enhance review
+6. **Returns findings** - Final structured JSON output
+
+**Limits:**
+- Maximum 5 tool iterations per file (prevents runaway costs)
+- Tool results truncated at 5KB per call
+- Only allows access to repository files (security sandbox)
+
+### Cost Impact
+
+Tool calling increases token usage:
+- **Per tool call:** ~500-2000 tokens depending on result size
+- **Average increase:** 15-25% total cost for typical PRs
+- **Worst case:** 50-100% increase for complex PRs with many tool calls
+
+**Example:**
+- Without tools: 50K tokens = $0.75 (Sonnet)
+- With tools (3 calls): 65K tokens = $0.98 (Sonnet)
+
+### Best Practices
+
+```yaml
+# Security-sensitive PRs - enable tools
+enableAiReview: true
+aiReviewMode: per-file
+aiEnableTools: true
+aiReviewContext: |
+  This changes authentication logic.
+  Verify all callers are updated.
+
+# High-volume PRs - disable tools for speed
+enableAiReview: true
+aiReviewMode: per-file
+aiEnableTools: false
+```
+
+**When tools help most:**
+- API contract changes
+- Database migrations
+- Security-critical code
+- Refactoring across multiple files
+
+---
+
 ## AI review context
 
 Use `aiReviewContext` to focus the review:
@@ -363,27 +543,177 @@ enableAiReview: true
 aiEnableReasoning: true
 ```
 
-When enabled, the AI will show its reasoning for each file review in the logs:
+**With structured reasoning enabled, you'll see:**
 
+1. **Extended Thinking** - AI's internal reasoning process:
 ```
 🧠 AI Reasoning — File: src/auth/login.ts:
-
 --- Thought 1 ---
-I need to examine the authentication changes carefully. The diff shows
-a new password validation function being added. Let me check if there
-are any security considerations...
---- End reasoning ---
+Analyzing authentication flow changes...
 ```
 
+2. **Structured Analysis Steps** - Multi-phase analysis:
+```
+📊 Structured Analysis — src/auth/login.ts:
+
+[Initial Scan]
+  Observation: Added password validation function with regex pattern
+  Conclusion: New security-related code requires verification
+
+[Security Analysis]
+  Observation: Regex pattern /^.{8,}$/ only checks length, not complexity
+  Conclusion: Weak password validation - missing character requirements
+
+[Pattern Detection]
+  Observation: No error handling for regex execution
+  Conclusion: Could throw on malformed input
+```
+
+3. **Structured Findings** - JSON format with mandatory citations:
+```json
+{
+  "severity": "high",
+  "category": "security",
+  "title": "Weak password validation",
+  "description": "Password regex only checks length, not complexity",
+  "file": "src/auth/login.ts",
+  "diffLines": "+  const isValid = /^.{8,}$/.test(password);",
+  "suggestion": "Use stronger regex: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}$/"
+}
+```
+
+**Key Benefits:**
+- ✅ **Deterministic analysis**: Structured JSON output instead of free-form text
+- ✅ **Mandatory citations**: Every finding must reference actual diff lines
+- ✅ **Multi-step reasoning**: See how AI reaches conclusions
+- ✅ **Validation**: Automatic verification that cited lines exist in diff
+- ✅ **Reduced hallucinations**: Structure enforces grounding in visible code
+
 **Trade-offs:**
-- ✅ **Benefits**: Better transparency, understand AI decisions, debug unexpected reviews
 - ⚠️ **Costs**: Increases token usage by ~20-30% (minimum 1024 thinking tokens per API call)
 
 **When to use:**
 - Debugging why AI flagged/missed something
 - Understanding AI's analysis approach
-- Training/improving your review context
-- Production debugging (can be enabled/disabled per pipeline run)
+- Production use - provides audit trail of AI decisions
+- High-stakes reviews requiring transparency
+
+---
+
+## Specialized Review Skills
+
+**New in v0.3.5+**: Enable domain-specific expert reviewers for comprehensive code analysis.
+
+### Quick Start
+
+```yaml
+enableAiReview: true
+aiReviewMode: per-file           # Required for skills
+aiEnableSkills: true
+aiSkills: security,performance   # Comma-separated skill IDs
+aiSkillAutoDetect: true          # Auto-add relevant skills
+```
+
+### Available Skills
+
+| Skill | Quality | Focus | Use For |
+|---|---|---|---|
+| 🔒 **security** | 92% | SQL injection, XSS, auth bypass, credentials | Auth, payments, user data |
+| ⚡ **performance** | 88% | N+1 queries, inefficient algorithms, blocking ops | DB queries, loops, real-time |
+| 🗄️ **database** | 90% | Migration safety, indexes, data integrity | Migrations, schema changes |
+| 🔌 **api** | 82% | Breaking changes, REST design, validation | Endpoints, routes, GraphQL |
+| ♿ **accessibility** | 78% | WCAG compliance, ARIA, keyboard nav | UI components, forms |
+
+### How It Works
+
+1. **Parallel Execution**: 3 files processed simultaneously, all skills run in parallel per file
+2. **Auto-Detection**: Matches file patterns (`**/auth/**` → security) and content (`SELECT` → database)
+3. **Quality Filtering**: Validates citations, confidence (70-80% thresholds), removes hallucinations
+4. **Performance**: 85% faster than sequential (17s vs 150s for 10 files × 3 skills)
+
+### Configuration Examples
+
+**Security-focused (recommended for most PRs):**
+```yaml
+aiSkills: security
+aiSkillAutoDetect: true          # Add database/api/etc as needed
+```
+
+**Comprehensive (high-value PRs):**
+```yaml
+aiSkills: security,performance,database,api
+aiSkillAutoDetect: false
+```
+
+**Cost-optimized (only relevant skills):**
+```yaml
+aiSkills: ""                     # No base skills
+aiSkillAutoDetect: true          # Add only what matches
+```
+
+**Branch-conditional:**
+```yaml
+# Main branch - comprehensive
+aiEnableSkills: ${{ eq(variables['Build.SourceBranch'], 'refs/heads/main') }}
+aiSkills: ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/main'), 'security,performance,database', 'security' }}
+```
+
+### Cost Impact
+
+Skills provide specialized expertise but increase token usage:
+
+| Configuration | Tokens | Cost (Sonnet) | Use Case |
+|---|---|---|---|
+| No skills | 50K | $0.75 | Simple PRs |
+| 2 skills | 125K | $1.88 | Security-critical |
+| 3 skills | 165K | $2.48 | Comprehensive |
+| 5 skills | 225K | $3.38 | Mission-critical |
+
+### Output Example
+
+```
+🎯 Skills Mode: security,performance
+   Auto-detection: enabled
+
+  Running 3 skill(s) for src/auth/login.ts: Security, API, Performance
+  [src/auth/login.ts] Skills Summary:
+    - Security: 3 findings (100% quality, 1250ms)
+    - API: 1 findings (100% quality, 980ms)
+    - Performance: 0 findings (-, 890ms)
+
+### src/auth/login.ts
+
+🔴 [security] Hardcoded Password Salt
+  Salt should be randomly generated, not hardcoded
+  ```diff
+  + const salt = "fixed-salt-123";
+  ```
+  💡 Use crypto.randomBytes(16).toString('hex')
+
+🟠 [api] Missing Error Response Standardization
+  Error format differs from other endpoints
+```
+
+### Best Practices
+
+**When to use skills:**
+- ✅ Security-sensitive code (auth, payments)
+- ✅ Database migrations
+- ✅ Public API changes
+- ✅ Performance-critical endpoints
+- ✅ User-facing UI components
+
+**When to skip skills:**
+- ❌ Documentation-only PRs
+- ❌ Draft/WIP pull requests
+- ❌ Simple bug fixes
+
+📚 **Full Documentation**: See [Specialized Review Skills Guide](./USER_GUIDE_SKILLS.md) for:
+- Detailed skill descriptions with examples
+- Quality assurance framework
+- Advanced configuration strategies
+- Troubleshooting guide
+- Cost optimization techniques
 
 ---
 

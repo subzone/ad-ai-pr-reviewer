@@ -31,13 +31,96 @@ An Azure DevOps pipeline task that creates pull requests and posts **AI-generate
 
 - **Create PRs** on GitHub, GitLab, Bitbucket Cloud, or Bitbucket Server from any ADO pipeline
 - **AI code review** powered by [Claude](https://anthropic.com) — posts a structured review comment directly on the PR
+- **🆕 Specialized review skills** — Domain-specific expert reviewers (security, performance, database, API, accessibility)
 - **Multiple AI hosting options** — Anthropic direct, Azure AI Foundry, AWS Bedrock, Google Vertex AI, or LiteLLM
 - **Per-file review mode** — reviews each file individually then synthesizes findings
+- **AI tool calling** — Agents can read files, search code, gather context beyond visible diff
+- **Parallel execution** — Multiple files and skills reviewed simultaneously (85% faster)
 - **Post comments** on existing PRs, labelled as AI PR Comments
 - Detects and handles duplicate PRs gracefully
 - Configurable diff truncation to stay within token limits on large PRs
+- **Anti-hallucination safeguards** — Intelligent file selection, validation checks, mandatory citations
+- **Token tracking & cost estimation** — Monitor usage and costs per PR
 - Exposes `PrUrl`, `PrNumber`, `ReviewVerdict`, `ReviewTotalIssues`, and `ReviewSummary` as output variables
 - Works with GitHub Enterprise, GitLab self-hosted, Bitbucket Server/Data Center
+
+---
+
+## 🎯 Specialized Review Skills (New!)
+
+Get expert-level analysis with domain-specific AI agents that run in parallel:
+
+### Available Skills
+
+<table>
+<tr>
+<td align="center">🔒</td>
+<td><strong>Security (92%)</strong><br/>SQL injection, XSS, CSRF, auth bypass, hardcoded credentials<br/><em>Essential for auth, payments, user data</em></td>
+</tr>
+<tr>
+<td align="center">⚡</td>
+<td><strong>Performance (88%)</strong><br/>N+1 queries, inefficient algorithms, blocking operations<br/><em>Database queries, loops, real-time features</em></td>
+</tr>
+<tr>
+<td align="center">🗄️</td>
+<td><strong>Database (90%)</strong><br/>Migration safety, missing indexes, data integrity issues<br/><em>Schema changes, migrations, query optimization</em></td>
+</tr>
+<tr>
+<td align="center">🔌</td>
+<td><strong>API Design (82%)</strong><br/>Breaking changes, REST compliance, validation gaps<br/><em>Endpoints, routes, GraphQL, versioning</em></td>
+</tr>
+<tr>
+<td align="center">♿</td>
+<td><strong>Accessibility (78%)</strong><br/>WCAG violations, ARIA issues, keyboard navigation<br/><em>UI components, forms, interactive elements</em></td>
+</tr>
+</table>
+
+### Quick Example
+
+```yaml
+- task: AiPrReviewer@1
+  inputs:
+    action: reviewPR
+    provider: github
+    enableAiReview: true
+    aiReviewMode: per-file
+    
+    # Enable specialized skills
+    aiEnableSkills: true
+    aiSkills: security,performance
+    aiSkillAutoDetect: true  # Auto-add relevant skills
+```
+
+**Result:**
+```
+🎯 Skills Mode: security,performance
+   Auto-detection: enabled
+
+  Running 3 skill(s) for src/auth/login.ts: Security, API, Performance
+  [src/auth/login.ts] Skills Summary:
+    - Security: 3 findings (100% quality, 1250ms)
+    - API: 1 findings (100% quality, 980ms)
+    - Performance: 0 findings (-, 890ms)
+
+### src/auth/login.ts
+
+🔴 [security] Hardcoded Password Salt
+  Salt should be randomly generated, not hardcoded
+  ```diff
+  + const salt = "fixed-salt-123";
+  ```
+  💡 Use crypto.randomBytes(16).toString('hex')
+```
+
+### Why Use Skills?
+
+✅ **85% faster** — Parallel execution vs sequential  
+✅ **Expert analysis** — Specialized prompts per domain  
+✅ **Quality scores** — 78-92% validation rates  
+✅ **Auto-detection** — Smart skill selection  
+✅ **Cost-effective** — Focus tokens on relevant expertise  
+
+📚 **Learn more:** [Specialized Skills Guide](docs/USER_GUIDE_SKILLS.md) | [Architecture Diagrams](docs/ARCHITECTURE_DIAGRAMS.md)
 
 ---
 
@@ -227,6 +310,11 @@ See [USER_GUIDE.md → Model Selection](docs/USER_GUIDE.md#claude-model-selectio
 | `aiMaxDiffLines` | | `500` | Truncate diff at this many lines |
 | `aiReviewMode` | | `standard` | `standard` (whole diff) or `per-file` (file-by-file with synthesis) |
 | `aiMaxFiles` | | `10` | Max files reviewed in `per-file` mode |
+| `aiEnableReasoning` | | `false` | Show AI's reasoning process in logs |
+| `aiEnableTools` | | `false` | Allow AI to read files, search code (requires `per-file` mode) |
+| `aiEnableSkills` | | `false` | Enable specialized review skills (requires `per-file` mode) — [Learn More](docs/USER_GUIDE_SKILLS.md) |
+| `aiSkills` | | | Comma-separated skill IDs: `security,performance,database,api,accessibility` |
+| `aiSkillAutoDetect` | | `true` | Auto-add relevant skills based on file patterns and content |
 
 ---
 

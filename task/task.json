@@ -269,6 +269,46 @@
       "visibleRule": "enableAiReview = true"
     },
     {
+      "name": "aiEnableTools",
+      "type": "boolean",
+      "label": "Enable AI Tool Calling",
+      "defaultValue": "false",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "Allow AI to use tools to read files, search code, and gather additional context beyond the visible diff. Agents can call read_full_file, read_file_section, search_codebase, and list_directory. This increases accuracy but adds token costs per tool call (~15-25% total increase). Requires repository to be checked out.",
+      "visibleRule": "enableAiReview = true && aiReviewMode = per-file"
+    },
+    {
+      "name": "aiEnableSkills",
+      "type": "boolean",
+      "label": "Enable Specialized Review Skills",
+      "defaultValue": "false",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "Use specialized AI agents (skills) for targeted reviews. Each skill focuses on a specific domain (security, performance, database, API, accessibility). Skills run in parallel for faster reviews. Adds 50-200% token cost depending on number of skills used.",
+      "visibleRule": "enableAiReview = true && aiReviewMode = per-file"
+    },
+    {
+      "name": "aiSkills",
+      "type": "string",
+      "label": "Review Skills",
+      "defaultValue": "security,performance",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "Comma-separated list of skills to use. Available: security, performance, database, api, accessibility. Each skill is a specialized expert that analyzes code for specific issues. Multiple skills run in parallel.",
+      "visibleRule": "aiEnableSkills = true"
+    },
+    {
+      "name": "aiSkillAutoDetect",
+      "type": "boolean",
+      "label": "Auto-detect Skills from Files",
+      "defaultValue": "true",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "Automatically add relevant skills based on file patterns and content. For example, files in auth/ folders trigger the security skill, *.sql files trigger the database skill. Recommended for comprehensive coverage.",
+      "visibleRule": "aiEnableSkills = true"
+    },
+    {
       "name": "awsAccessKeyId",
       "type": "string",
       "label": "AWS Access Key ID",
