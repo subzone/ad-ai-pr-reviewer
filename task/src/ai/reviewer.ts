@@ -304,10 +304,11 @@ If the file looks fine, say "No issues." in one line.`;
   };
 
   // Enable extended thinking if requested
+  // Note: Anthropic requires minimum 1024 tokens for thinking budget
   if (options.enableReasoning) {
     messageParams.thinking = {
       type: 'enabled',
-      budget_tokens: 512,
+      budget_tokens: 1024,
     };
   }
 

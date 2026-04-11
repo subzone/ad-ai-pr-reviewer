@@ -250,7 +250,7 @@ pattern matches the security requirements...
 
 **Trade-offs:**
 - ✅ Better transparency and debugging
-- ⚠️ Increases token usage by ~20-30%
+- ⚠️ Increases token usage by ~20-30% (minimum 1024 thinking tokens per API call)
 
 **Use cases:**
 - Debug why AI flagged/missed something

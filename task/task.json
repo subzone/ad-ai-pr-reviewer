@@ -265,7 +265,7 @@
       "defaultValue": "false",
       "required": false,
       "groupName": "ai",
-      "helpMarkDown": "Enable extended thinking mode to show AI's reasoning process in pipeline logs. This helps understand how the AI analyzes each file but increases token usage (~20-30%).",
+      "helpMarkDown": "Enable extended thinking mode to show AI's reasoning process in pipeline logs. This helps understand how the AI analyzes each file but increases token usage (~1024+ thinking tokens per API call, ~20-30% total increase).",
       "visibleRule": "enableAiReview = true"
     },
     {

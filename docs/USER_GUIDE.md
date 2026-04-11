@@ -377,7 +377,7 @@ are any security considerations...
 
 **Trade-offs:**
 - ✅ **Benefits**: Better transparency, understand AI decisions, debug unexpected reviews
-- ⚠️ **Costs**: Increases token usage by ~20-30%
+- ⚠️ **Costs**: Increases token usage by ~20-30% (minimum 1024 thinking tokens per API call)
 
 **When to use:**
 - Debugging why AI flagged/missed something
