@@ -174,6 +174,7 @@ Choose your git provider and follow the setup guide:
 
 ### General Resources
 - **[User Guide](docs/USER_GUIDE.md)** — How to use each action, choose models, customize reviews
+- **[Model Comparison Guide](docs/MODEL_COMPARISON.md)** — Which AI model to use, cost analysis, scenario recommendations
 - **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)** — Error messages and solutions
 - **[FAQ](docs/FAQ.md)** — Common questions, costs, security
 
@@ -263,6 +264,8 @@ Posts a comment tagged as AI-generated:
 - Haiku: ~$2/month
 - Sonnet: ~$6/month
 - Opus: ~$30/month
+
+📊 **[Full Model Comparison →](docs/MODEL_COMPARISON.md)** — Compare Claude vs GPT-4o vs Gemini with detailed cost analysis and quality metrics.
 
 See [USER_GUIDE.md → Model Selection](docs/USER_GUIDE.md#claude-model-selection) for decision tree.
 

@@ -904,7 +904,14 @@ async function reviewFileWithSkills(
   if (selectedSkills.length === 0) {
     // No skills matched - fall back to general review
     console.log(`  [${file}] No skills matched, using general review`);
-    return await reviewSingleFile(client, options, file, diff);
+    const result = await reviewSingleFile(client, options, file, diff);
+    return {
+      file,
+      findings: result.findings,
+      reasoning: result.reasoning,
+      usage: result.usage,
+      skillResults: [],
+    };
   }
   
   // Execute skills in parallel
@@ -934,7 +941,7 @@ async function reviewFileWithSkills(
     inputTokens: 0,
     outputTokens: 0,
     totalTokens: merged.totalTokens,
-    estimatedCost: calculateCost(merged.totalTokens, options.model ?? DEFAULT_MODEL),
+    estimatedCost: 0, // Will be calculated after aggregating input/output
     model: options.model ?? DEFAULT_MODEL,
   };
   
@@ -944,6 +951,13 @@ async function reviewFileWithSkills(
       totalUsage.outputTokens += result.tokenUsage.outputTokens;
     }
   }
+  
+  // Calculate accurate cost now that we have input/output tokens
+  totalUsage.estimatedCost = calculateCost(
+    totalUsage.inputTokens,
+    totalUsage.outputTokens,
+    options.model ?? DEFAULT_MODEL
+  );
   
   // Aggregate reasoning
   const allReasoning: string[] = [];
@@ -1023,17 +1037,6 @@ function formatSkillFindings(merged: any, file: string): string {
   }
   
   return lines.join('\n').trim();
-}
-
-/**
- * Calculate cost for token count
- */
-function calculateCost(tokens: number, model: string): number {
-  const pricing = MODEL_PRICING[model] || MODEL_PRICING[DEFAULT_MODEL];
-  // Rough estimate assuming 50/50 input/output split
-  const inputCost = (tokens * 0.5 / 1_000_000) * pricing.input;
-  const outputCost = (tokens * 0.5 / 1_000_000) * pricing.output;
-  return inputCost + outputCost;
 }
 
 async function synthesizeFindings(

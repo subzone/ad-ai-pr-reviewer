@@ -443,6 +443,7 @@
     <a href="#features">Features</a>
     <a href="#providers">Providers</a>
     <a href="#configurator">Configurator</a>
+    <a href="#models">Models & Costs</a>
     <a href="#examples">Examples</a>
     <a href="https://github.com/subzone/ad-ai-pr-reviewer/blob/main/docs/USER_GUIDE.md" target="_blank">Docs</a>
     <a class="btn btn-ghost" href="https://github.com/subzone/ad-ai-pr-reviewer" target="_blank">GitHub</a>
@@ -738,6 +739,242 @@
       </div>
 
     </div>
+  </div>
+</section>
+
+<!-- ── Model Selection & Costs ── -->
+<section id="models">
+  <div class="container">
+    <div class="section-tag">Model Selection Guide</div>
+    <h2>Choose the right AI model<br />for your scenario.</h2>
+    <p class="sub">Different teams have different needs. Find your perfect match based on budget, quality, and scale.</p>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:2rem;margin-top:3rem">
+
+      <!-- Production -->
+      <div style="background:#fff;border-radius:12px;padding:2rem;border:2px solid #e2e8f0;transition:all .2s" onmouseover="this.style.borderColor='#f97316'" onmouseout="this.style.borderColor='#e2e8f0'">
+        <div style="font-size:2rem;margin-bottom:1rem">🏆</div>
+        <h3 style="margin-bottom:0.5rem;font-size:1.25rem">Production Deployments</h3>
+        <p style="color:#64748b;font-size:0.9rem;margin-bottom:1.5rem">Security-critical code, high confidence needed</p>
+        
+        <div style="background:#f8fafc;padding:1rem;border-radius:8px;margin-bottom:1rem">
+          <div style="font-weight:700;color:#f97316;font-size:1.1rem">Claude Sonnet 4</div>
+          <div style="color:#64748b;font-size:0.85rem;margin-top:0.25rem">⭐⭐⭐⭐⭐ Quality</div>
+        </div>
+        
+        <div style="font-size:0.85rem;line-height:1.7;color:#64748b">
+          <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem">
+            <span>Cost/month:</span>
+            <strong style="color:#0f172a">$140</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem">
+            <span>Context:</span>
+            <strong style="color:#0f172a">200K tokens</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span>PRs/month:</span>
+            <strong style="color:#0f172a">100</strong>
+          </div>
+        </div>
+        
+        <div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid #e2e8f0">
+          <div style="font-size:0.8rem;color:#059669;font-weight:600;margin-bottom:0.5rem">✓ Best for</div>
+          <ul style="font-size:0.8rem;color:#64748b;line-height:1.6;padding-left:1.2rem;margin:0">
+            <li>Main branch deployments</li>
+            <li>Auth & payment code</li>
+            <li>Compliance reviews</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- High Volume -->
+      <div style="background:#fff;border-radius:12px;padding:2rem;border:2px solid #e2e8f0;transition:all .2s" onmouseover="this.style.borderColor='#f97316'" onmouseout="this.style.borderColor='#e2e8f0'">
+        <div style="font-size:2rem;margin-bottom:1rem">💰</div>
+        <h3 style="margin-bottom:0.5rem;font-size:1.25rem">High-Volume Teams</h3>
+        <p style="color:#64748b;font-size:0.9rem;margin-bottom:1.5rem">200+ PRs/month, cost-conscious</p>
+        
+        <div style="background:#f8fafc;padding:1rem;border-radius:8px;margin-bottom:1rem">
+          <div style="font-weight:700;color:#f97316;font-size:1.1rem">GPT-4o</div>
+          <div style="color:#64748b;font-size:0.85rem;margin-top:0.25rem">⭐⭐⭐⭐½ Quality</div>
+        </div>
+        
+        <div style="font-size:0.85rem;line-height:1.7;color:#64748b">
+          <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem">
+            <span>Cost/month:</span>
+            <strong style="color:#059669">$98</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem">
+            <span>Context:</span>
+            <strong style="color:#0f172a">128K tokens</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span>Savings:</span>
+            <strong style="color:#059669">30% cheaper</strong>
+          </div>
+        </div>
+        
+        <div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid #e2e8f0">
+          <div style="font-size:0.8rem;color:#059669;font-weight:600;margin-bottom:0.5rem">✓ Best for</div>
+          <ul style="font-size:0.8rem;color:#64748b;line-height:1.6;padding-left:1.2rem;margin:0">
+            <li>Feature branches</li>
+            <li>Regular PRs</li>
+            <li>90-95% Claude quality</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Large PRs -->
+      <div style="background:#fff;border-radius:12px;padding:2rem;border:2px solid #e2e8f0;transition:all .2s" onmouseover="this.style.borderColor='#f97316'" onmouseout="this.style.borderColor='#e2e8f0'">
+        <div style="font-size:2rem;margin-bottom:1rem">🚀</div>
+        <h3 style="margin-bottom:0.5rem;font-size:1.25rem">Large PRs & Monorepos</h3>
+        <p style="color:#64748b;font-size:0.9rem;margin-bottom:1.5rem">1,000+ line PRs, architecture changes</p>
+        
+        <div style="background:#f8fafc;padding:1rem;border-radius:8px;margin-bottom:1rem">
+          <div style="font-weight:700;color:#f97316;font-size:1.1rem">Gemini 1.5 Pro</div>
+          <div style="color:#64748b;font-size:0.85rem;margin-top:0.25rem">⭐⭐⭐⭐ Quality</div>
+        </div>
+        
+        <div style="font-size:0.85rem;line-height:1.7;color:#64748b">
+          <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem">
+            <span>Cost/month:</span>
+            <strong style="color:#059669">$49</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem">
+            <span>Context:</span>
+            <strong style="color:#7c3aed">2M tokens 🔥</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span>Savings:</span>
+            <strong style="color:#059669">65% cheaper</strong>
+          </div>
+        </div>
+        
+        <div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid #e2e8f0">
+          <div style="font-size:0.8rem;color:#059669;font-weight:600;margin-bottom:0.5rem">✓ Best for</div>
+          <ul style="font-size:0.8rem;color:#64748b;line-height:1.6;padding-left:1.2rem;margin:0">
+            <li>Massive refactors</li>
+            <li>10,000+ line PRs</li>
+            <li>Cross-file reasoning</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Draft PRs -->
+      <div style="background:#fff;border-radius:12px;padding:2rem;border:2px solid #e2e8f0;transition:all .2s" onmouseover="this.style.borderColor='#f97316'" onmouseout="this.style.borderColor='#e2e8f0'">
+        <div style="font-size:2rem;margin-bottom:1rem">⚡</div>
+        <h3 style="margin-bottom:0.5rem;font-size:1.25rem">Draft/WIP PRs</h3>
+        <p style="color:#64748b;font-size:0.9rem;margin-bottom:1.5rem">Pre-review filtering, high volume</p>
+        
+        <div style="background:#f8fafc;padding:1rem;border-radius:8px;margin-bottom:1rem">
+          <div style="font-weight:700;color:#f97316;font-size:1.1rem">Gemini 1.5 Flash</div>
+          <div style="color:#64748b;font-size:0.85rem;margin-top:0.25rem">⭐⭐⭐½ Quality</div>
+        </div>
+        
+        <div style="font-size:0.85rem;line-height:1.7;color:#64748b">
+          <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem">
+            <span>Cost/month:</span>
+            <strong style="color:#059669">$3</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem">
+            <span>Context:</span>
+            <strong style="color:#0f172a">1M tokens</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span>Savings:</span>
+            <strong style="color:#059669">98% cheaper</strong>
+          </div>
+        </div>
+        
+        <div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid #e2e8f0">
+          <div style="font-size:0.8rem;color:#059669;font-weight:600;margin-bottom:0.5rem">✓ Best for</div>
+          <ul style="font-size:0.8rem;color:#64748b;line-height:1.6;padding-left:1.2rem;margin:0">
+            <li>Draft pull requests</li>
+            <li>Quick feedback</li>
+            <li>Speed > thoroughness</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Cost Comparison Table -->
+    <div style="margin-top:4rem;background:#fff;border-radius:12px;padding:2.5rem;border:2px solid #e2e8f0">
+      <h3 style="text-align:center;margin-bottom:2rem;font-size:1.5rem">💵 Cost Comparison (100 PRs/month)</h3>
+      
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:0.9rem">
+          <thead>
+            <tr style="background:#f8fafc">
+              <th style="padding:1rem;text-align:left;border-bottom:2px solid #e2e8f0">Model</th>
+              <th style="padding:1rem;text-align:center;border-bottom:2px solid #e2e8f0">Context</th>
+              <th style="padding:1rem;text-align:center;border-bottom:2px solid #e2e8f0">Quality</th>
+              <th style="padding:1rem;text-align:center;border-bottom:2px solid #e2e8f0">Small PRs<br/><span style="font-weight:400;font-size:0.8rem">(5 files)</span></th>
+              <th style="padding:1rem;text-align:center;border-bottom:2px solid #e2e8f0">Medium PRs<br/><span style="font-weight:400;font-size:0.8rem">(10 files)</span></th>
+              <th style="padding:1rem;text-align:center;border-bottom:2px solid #e2e8f0">Large PRs<br/><span style="font-weight:400;font-size:0.8rem">(20 files)</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="padding:1rem;border-bottom:1px solid #e2e8f0"><strong>Claude Sonnet 4</strong> <span style="color:#f97316;font-size:0.75rem">DEFAULT</span></td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0">200K</td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0">⭐⭐⭐⭐⭐</td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0">$105</td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0">$140</td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0">$280</td>
+            </tr>
+            <tr style="background:#f8fafc">
+              <td style="padding:1rem;border-bottom:1px solid #e2e8f0"><strong>GPT-4o</strong></td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0">128K</td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0">⭐⭐⭐⭐½</td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0"><span style="color:#059669">$72</span></td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0"><span style="color:#059669">$98</span></td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0"><span style="color:#059669">$196</span></td>
+            </tr>
+            <tr>
+              <td style="padding:1rem;border-bottom:1px solid #e2e8f0"><strong>Gemini 1.5 Pro</strong> <span style="color:#7c3aed;font-size:0.75rem">2M CONTEXT</span></td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0"><strong style="color:#7c3aed">2M</strong></td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0">⭐⭐⭐⭐</td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0"><span style="color:#059669">$36</span></td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0"><span style="color:#059669">$49</span></td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0"><span style="color:#059669">$98</span></td>
+            </tr>
+            <tr style="background:#f8fafc">
+              <td style="padding:1rem;border-bottom:1px solid #e2e8f0"><strong>Gemini 1.5 Flash</strong></td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0">1M</td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0">⭐⭐⭐½</td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0"><span style="color:#059669;font-weight:700">$2</span></td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0"><span style="color:#059669;font-weight:700">$3</span></td>
+              <td style="padding:1rem;text-align:center;border-bottom:1px solid #e2e8f0"><span style="color:#059669;font-weight:700">$6</span></td>
+            </tr>
+            <tr>
+              <td style="padding:1rem"><strong>DeepSeek V3</strong></td>
+              <td style="padding:1rem;text-align:center">64K</td>
+              <td style="padding:1rem;text-align:center">⭐⭐⭐⭐</td>
+              <td style="padding:1rem;text-align:center"><span style="color:#059669">$7</span></td>
+              <td style="padding:1rem;text-align:center"><span style="color:#059669">$10</span></td>
+              <td style="padding:1rem;text-align:center"><span style="color:#059669">$20</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:2rem;padding:1.5rem;background:#fffbeb;border-radius:8px;border:1px solid #fde047">
+        <div style="font-weight:700;color:#ca8a04;margin-bottom:0.5rem">💡 Pro Tip: Hybrid Strategy</div>
+        <p style="font-size:0.9rem;color:#854d0e;margin:0">Use Claude Sonnet for main branch (security-critical) and GPT-4o for feature branches. Save 50% while maintaining quality where it matters.</p>
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <div style="text-align:center;margin-top:3rem">
+      <a href="docs/MODEL_COMPARISON.md" class="btn btn-primary" style="display:inline-flex;gap:8px;align-items:center;text-decoration:none">
+        📊 Full Model Comparison Guide
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0L6.59 1.41 12.17 7H0v2h12.17l-5.58 5.59L8 16l8-8z"/></svg>
+      </a>
+      <p style="margin-top:1rem;font-size:0.875rem;color:#64748b">
+        Detailed analysis, real-world examples, migration guides & more
+      </p>
+    </div>
+
   </div>
 </section>
 

@@ -111,6 +111,8 @@ See:
 
 See [USER_GUIDE.md → Model Selection](./USER_GUIDE.md#claude-model-selection) for detailed comparison.
 
+📊 **Want to explore other models?** Check out our [Model Comparison Guide](./MODEL_COMPARISON.md) for GPT-4o, Gemini 1.5 Pro, and more — with cost analysis, quality metrics, and scenario-based recommendations.
+
 ---
 
 ### Can I customize what the AI looks for?
@@ -225,6 +227,8 @@ See [USER_GUIDE.md → Intelligent File Selection](./USER_GUIDE.md#intelligent-f
 **Example:** 20 PRs/day with Sonnet = ~`$6/month`
 
 See [USER_GUIDE.md → Cost Estimation](./USER_GUIDE.md#cost-estimation) for detailed calculator.
+
+💡 **Compare costs across models:** Our [Model Comparison Guide](./MODEL_COMPARISON.md) shows detailed cost breakdowns for Claude, GPT-4o, Gemini, and more.
 
 ---
 
