@@ -745,6 +745,26 @@ Analyze the above diff and return valid JSON following the schema.`;
     }
     if (iteration >= MAX_TOOL_ITERATIONS) {
         console.log(`⚠️  Reached max tool iterations (${MAX_TOOL_ITERATIONS}) for ${file}`);
+        // If the last message has no text block the model is still mid-tool-loop.
+        // Send one final prompt asking it to wrap up, so extractText doesn't blow up.
+        const lastHasText = message.content.some(b => b.type === 'text');
+        if (!lastHasText) {
+            console.log(`🔄 Requesting final summary for ${file} after tool iterations...`);
+            conversationHistory.push({ role: 'assistant', content: message.content });
+            conversationHistory.push({
+                role: 'user',
+                content: 'You have reached the tool use limit. Using only the information gathered so far, return your final JSON review following the required schema.',
+            });
+            messageParams.messages = conversationHistory;
+            // Remove tools so the model can't request more
+            delete messageParams.tools;
+            message = await (0, utils_1.callWithRetry)(() => client.messages.create(messageParams));
+            const finalUsage = extractUsage(message, model);
+            totalUsage.inputTokens += finalUsage.inputTokens;
+            totalUsage.outputTokens += finalUsage.outputTokens;
+            totalUsage.totalTokens += finalUsage.totalTokens;
+            totalUsage.estimatedCost += finalUsage.estimatedCost;
+        }
     }
     // Log final reasoning
     if (allReasoning.length > 0) {
@@ -1223,7 +1243,8 @@ function extractText(message) {
             return block.text;
         }
     }
-    throw new Error('No text content found in AI response');
+    console.warn('⚠️  No text content found in AI response — using empty fallback');
+    return '';
 }
 function buildResult(reviewText, diff) {
     const summary = extractSummaryLine(reviewText);

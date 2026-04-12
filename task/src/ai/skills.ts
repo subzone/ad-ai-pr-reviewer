@@ -767,7 +767,8 @@ function extractTextFromMessage(message: any): string {
       return block.text;
     }
   }
-  throw new Error('No text content in AI response');
+  console.warn('⚠️  No text content in AI response — using empty fallback');
+  return '';
 }
 
 /**
