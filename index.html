@@ -428,7 +428,68 @@
       .hero-stats { gap: 2rem; }
       .cta-banner { padding: 2.5rem 1.5rem; }
       footer { flex-direction: column; text-align: center; }
+      .screenshots-grid { grid-template-columns: 1fr; }
     }
+
+    /* ── Version badge ── */
+    .version-tag {
+      font-size: 0.68rem; font-weight: 700;
+      background: rgba(249,115,22,.12); color: var(--orange);
+      padding: 2px 8px; border-radius: 20px;
+      border: 1px solid rgba(249,115,22,.28);
+      letter-spacing: 0.03em; white-space: nowrap;
+    }
+
+    /* ── Screenshot gallery ── */
+    .screenshots-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+      gap: 1.75rem;
+    }
+
+    .screenshot-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: 0 2px 12px rgba(15,23,42,.07);
+      transition: box-shadow .2s, transform .2s;
+      background: var(--white);
+    }
+
+    .screenshot-card:hover {
+      box-shadow: 0 8px 28px rgba(15,23,42,.14);
+      transform: translateY(-2px);
+    }
+
+    .screenshot-card img {
+      width: 100%; height: auto; display: block;
+    }
+
+    .screenshot-caption {
+      padding: .85rem 1.1rem;
+      background: var(--gray);
+      border-top: 1px solid var(--border);
+      font-size: 0.82rem; color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .screenshot-caption strong { color: var(--text); }
+
+    /* ── Cost estimate ── */
+    #cfg-cost-estimate {
+      padding: 0.85rem 1rem;
+      background: rgba(249,115,22,.06);
+      border: 1px solid rgba(249,115,22,.2);
+      border-radius: 10px;
+      margin-top: -.1rem;
+      display: none;
+    }
+
+    .cfg-toggle-row {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 0.875rem; font-weight: 500; cursor: pointer;
+    }
+    .cfg-toggle-row input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -438,9 +499,11 @@
   <div class="nav-logo">
     <img src="images/extension-icon.png" alt="AI PR Reviewer" />
     AI PR Reviewer
+    <span class="version-tag" id="version-tag">v0.2.1</span>
   </div>
   <div class="nav-links">
     <a href="#features">Features</a>
+    <a href="#in-action">Screenshots</a>
     <a href="#providers">Providers</a>
     <a href="#configurator">Configurator</a>
     <a href="#models">Models & Costs</a>
@@ -594,6 +657,50 @@
   </div>
 </section>
 
+<!-- ── In Action ── -->
+<section id="in-action">
+  <div class="container">
+    <div class="section-tag">In Action</div>
+    <h2>Real reviews,<br />posted inline.</h2>
+    <p class="sub">AI findings appear directly on changed lines in your pull request — with one-click fix suggestions developers can commit instantly.</p>
+    <div class="screenshots-grid">
+
+      <div class="screenshot-card">
+        <img src="images/Screenshot%202026-04-12%20at%2011.24.34.png"
+             alt="AI Review HIGH security finding with suggested fix" loading="lazy" />
+        <div class="screenshot-caption">
+          <strong>🔒 HIGH · Security</strong> — Placeholder bundle ID detected in a production Terraform config. AI identifies the exact line and provides a runnable AWS CLI command to resolve it.
+        </div>
+      </div>
+
+      <div class="screenshot-card">
+        <img src="images/Screenshot%202026-04-12%20at%2011.25.08.png"
+             alt="AI Review INFO best practice finding" loading="lazy" />
+        <div class="screenshot-caption">
+          <strong>📋 INFO · Best Practice</strong> — Backend config flags mismatch detected between code comments and the CI/CD pipeline. Suggests adding all required flags before merge.
+        </div>
+      </div>
+
+      <div class="screenshot-card">
+        <img src="images/Screenshot%202026-04-12%20at%2011.25.36.png"
+             alt="AI Review MEDIUM best practice finding on diff line" loading="lazy" />
+        <div class="screenshot-caption">
+          <strong>💡 MEDIUM · Best Practice</strong> — HIPAA log retention below recommended value. Posted inline on the exact changed line with context-aware reasoning.
+        </div>
+      </div>
+
+      <div class="screenshot-card">
+        <img src="images/Screenshot%202026-04-12%20at%2011.26.02.png"
+             alt="AI Review HIGH bug - runtime panic risk" loading="lazy" />
+        <div class="screenshot-caption">
+          <strong>🐛 HIGH · Bug</strong> — Runtime panic risk from missing bounds check in Terraform module. AI provides a complete precondition block as a suggested fix.
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
 <!-- ── Configurator ── -->
 <section id="configurator" class="bg-off">
   <div class="container">
@@ -647,12 +754,26 @@
               oninput="cfg.model=this.value;renderYaml()" />
           </div>
 
+          <div id="cfg-cost-estimate"></div>
+
           <div class="cfg-group">
             <label>Review mode</label>
             <div class="cfg-opts">
               <button class="cfg-opt on" onclick="pick('reviewMode','standard',this)">Standard — whole diff</button>
               <button class="cfg-opt" onclick="pick('reviewMode','per-file',this)">Per-file + synthesis</button>
             </div>
+          </div>
+
+          <div class="cfg-group" id="cfg-inline-group">
+            <label>Inline diff comments</label>
+            <label class="cfg-toggle-row">
+              <input type="checkbox" id="cfg-inline-enabled" checked
+                onchange="cfg.inlineComments=this.checked;renderYaml()">
+              Post findings directly on changed lines
+            </label>
+            <p style="font-size:0.78rem;color:var(--muted);margin-top:.4rem;line-height:1.5">
+              AI comments appear as native inline review comments with one-click <code style="font-size:.8em;background:#f1f5f9;padding:1px 4px;border-radius:3px">```suggestion</code> fix blocks. Supported on GitHub, GitLab, and Bitbucket.
+            </p>
           </div>
 
           <div class="cfg-group" id="cfg-skills-group" style="display:none">
@@ -1189,7 +1310,8 @@
     maxDiff: '500',
     skillsEnabled: false,
     skills: ['security', 'performance'],
-    skillsAuto: true
+    skillsAuto: true,
+    inlineComments: true
   };
 
   const modelPresets = {
@@ -1219,12 +1341,26 @@
     litellm:   ''
   };
 
+  // Cost per 1M tokens (USD): { in, out }
+  const modelCosts = {
+    'claude-sonnet-4-6':                              { in: 3,    out: 15    },
+    'claude-opus-4-6':                                { in: 15,   out: 75    },
+    'claude-haiku-4-5-20251001':                      { in: 0.80, out: 4     },
+    'anthropic.claude-3-5-sonnet-20241022-v2:0':      { in: 3,    out: 15    },
+    'anthropic.claude-3-opus-20240229-v1:0':          { in: 15,   out: 75    },
+    'anthropic.claude-3-haiku-20240307-v1:0':         { in: 0.25, out: 1.25  },
+  };
+  // Typical medium PR review token estimate
+  const PR_INPUT_TOKENS = 40_000;
+  const PR_OUTPUT_TOKENS = 4_000;
+
   function pick(field, val, el) {
     cfg[field] = val;
     el.closest('.cfg-opts').querySelectorAll('.cfg-opt').forEach(b => b.classList.remove('on'));
     el.classList.add('on');
     if (field === 'action') {
       document.getElementById('cfg-ai-section').style.display = (val === 'commentPR') ? 'none' : '';
+      document.getElementById('cfg-inline-group').style.display = (val === 'reviewPR') ? '' : 'none';
     }
     if (field === 'aiProvider') {
       cfg.model = defaultModels[val];
@@ -1269,6 +1405,35 @@
       ).join('');
       cfg.model = presets[0].val;
     }
+    updateCostEstimate();
+  }
+
+  function updateCostEstimate() {
+    const el = document.getElementById('cfg-cost-estimate');
+    const costs = modelCosts[cfg.model];
+    if (!costs || cfg.action === 'commentPR') {
+      el.style.display = 'none';
+      return;
+    }
+    const perPR = (PR_INPUT_TOKENS * costs.in + PR_OUTPUT_TOKENS * costs.out) / 1_000_000;
+    const per100 = perPR * 100;
+    const fmt = n => n < 0.01 ? '<$0.01' : n < 1 ? `$${n.toFixed(2)}` : `$${Math.round(n)}`;
+    el.innerHTML = `
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:0.5rem">
+        <span style="font-size:0.82rem;font-weight:700;color:var(--text)">💰 Estimated cost</span>
+        <span style="font-size:0.72rem;color:var(--muted)">typical medium PR (~40K input + 4K output tokens)</span>
+      </div>
+      <div style="display:flex;gap:2rem;flex-wrap:wrap">
+        <div>
+          <span style="font-size:1.25rem;font-weight:900;color:var(--orange)">${fmt(perPR)}</span>
+          <span style="font-size:0.75rem;color:var(--muted);margin-left:4px">per PR</span>
+        </div>
+        <div>
+          <span style="font-size:1.25rem;font-weight:900;color:var(--text)">${fmt(per100)}</span>
+          <span style="font-size:0.75rem;color:var(--muted);margin-left:4px">per 100 PRs / mo</span>
+        </div>
+      </div>`;
+    el.style.display = '';
   }
 
   function gitProviderVal() {
@@ -1357,6 +1522,7 @@
 
     if (action !== 'commentPR') {
       L.push('    enableAiReview: true');
+      if (cfg.inlineComments) L.push('    aiEnableInlineComments: true');
       if (aiProvider !== 'anthropic') L.push(`    aiProvider:  ${aiProvider}`);
 
       if (aiProvider === 'anthropic') {
@@ -1422,6 +1588,7 @@
     const plain = yaml.replace(/&lt;/g, '<').replace(/&gt;/g, '>');
     document.getElementById('cfg-yaml-plain').value = plain;
     document.getElementById('cfg-yaml-display').innerHTML = highlight(yaml);
+    updateCostEstimate();
   }
 
   function copyYaml() {
@@ -1436,6 +1603,15 @@
   // Init
   renderModelUI();
   renderYaml();
+
+  // Load live version from vss-extension.json
+  fetch('vss-extension.json')
+    .then(r => r.json())
+    .then(d => {
+      const el = document.getElementById('version-tag');
+      if (el && d.version) el.textContent = 'v' + d.version;
+    })
+    .catch(() => {});
 </script>
 
 </body>
