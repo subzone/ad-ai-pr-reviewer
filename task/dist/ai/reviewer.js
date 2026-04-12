@@ -486,10 +486,11 @@ async function reviewPerFile(client, options) {
                 return await reviewFileWithSkills(client, options, analysis);
             }
             else {
-                const { findings, reasoning, usage } = await reviewSingleFile(client, options, analysis.file, analysis.diff);
+                const { findings, structuredFindings, reasoning, usage } = await reviewSingleFile(client, options, analysis.file, analysis.diff);
                 return {
                     file: analysis.file,
                     findings,
+                    structuredFindings,
                     reasoning,
                     usage,
                     skillResults: [],
@@ -499,6 +500,9 @@ async function reviewPerFile(client, options) {
         // Aggregate batch results
         for (const result of batchResults) {
             fileFindings.push({ file: result.file, findings: result.findings });
+            if (result.structuredFindings && result.structuredFindings.length > 0) {
+                allStructuredFindings.push(...result.structuredFindings);
+            }
             if (result.reasoning && result.reasoning.length > 0) {
                 allReasoning.push(`File: ${result.file}`, ...result.reasoning);
             }
@@ -769,6 +773,7 @@ Analyze the above diff and return valid JSON following the schema.`;
     const markdown = structuredToMarkdown(structured, file);
     return {
         findings: markdown,
+        structuredFindings: structured.findings,
         reasoning: allReasoning,
         usage: totalUsage,
     };
@@ -787,6 +792,7 @@ async function reviewFileWithSkills(client, options, fileAnalysis) {
         return {
             file,
             findings: result.findings,
+            structuredFindings: result.structuredFindings,
             reasoning: result.reasoning,
             usage: result.usage,
             skillResults: [],
@@ -837,6 +843,7 @@ async function reviewFileWithSkills(client, options, fileAnalysis) {
     return {
         file,
         findings: markdown,
+        structuredFindings: merged.allFindings,
         reasoning: allReasoning,
         usage: totalUsage,
         skillResults,

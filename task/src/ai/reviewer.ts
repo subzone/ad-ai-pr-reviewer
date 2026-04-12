@@ -641,7 +641,7 @@ async function reviewPerFile(
         if (useSkills) {
           return await reviewFileWithSkills(client, options, analysis);
         } else {
-          const { findings, reasoning, usage } = await reviewSingleFile(
+          const { findings, structuredFindings, reasoning, usage } = await reviewSingleFile(
             client,
             options,
             analysis.file,
@@ -650,6 +650,7 @@ async function reviewPerFile(
           return {
             file: analysis.file,
             findings,
+            structuredFindings,
             reasoning,
             usage,
             skillResults: [],
@@ -661,7 +662,11 @@ async function reviewPerFile(
     // Aggregate batch results
     for (const result of batchResults) {
       fileFindings.push({ file: result.file, findings: result.findings });
-      
+
+      if (result.structuredFindings && result.structuredFindings.length > 0) {
+        allStructuredFindings.push(...result.structuredFindings);
+      }
+
       if (result.reasoning && result.reasoning.length > 0) {
         allReasoning.push(`File: ${result.file}`, ...result.reasoning);
       }
@@ -720,7 +725,7 @@ async function reviewSingleFile(
   options: ReviewOptions,
   file: string,
   diff: string,
-): Promise<{ findings: string; reasoning: string[]; usage: TokenUsage | null }> {
+): Promise<{ findings: string; structuredFindings: Finding[]; reasoning: string[]; usage: TokenUsage | null }> {
   const maxLines = options.maxDiffLines ?? DEFAULT_MAX_DIFF_LINES;
   const truncated = truncateDiff(diff, Math.floor(maxLines / 3));
   const model = options.model ?? DEFAULT_MODEL;
@@ -980,6 +985,7 @@ Analyze the above diff and return valid JSON following the schema.`;
 
   return {
     findings: markdown,
+    structuredFindings: structured.findings,
     reasoning: allReasoning,
     usage: totalUsage,
   };
@@ -994,6 +1000,7 @@ async function reviewFileWithSkills(
 ): Promise<{
   file: string;
   findings: string;
+  structuredFindings: Finding[];
   reasoning: string[];
   usage: TokenUsage | null;
   skillResults: any[];
@@ -1018,6 +1025,7 @@ async function reviewFileWithSkills(
     return {
       file,
       findings: result.findings,
+      structuredFindings: result.structuredFindings,
       reasoning: result.reasoning,
       usage: result.usage,
       skillResults: [],
@@ -1087,6 +1095,7 @@ async function reviewFileWithSkills(
   return {
     file,
     findings: markdown,
+    structuredFindings: merged.allFindings as Finding[],
     reasoning: allReasoning,
     usage: totalUsage,
     skillResults,
