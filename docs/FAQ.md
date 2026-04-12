@@ -115,6 +115,39 @@ See [USER_GUIDE.md → Model Selection](./USER_GUIDE.md#claude-model-selection) 
 
 ---
 
+### Does the AI post inline comments on code?
+
+**Yes!** When `aiEnableInlineComments: true` (default), findings are posted as inline comments directly on the changed code lines.
+
+**What you get:**
+- 🎯 **Exact line highlighting** — Issues appear at the precise location in your code
+- 🔧 **One-click fixes** — GitHub suggestion blocks let you accept changes instantly
+- 💬 **Threaded discussions** — Reply to specific findings inline
+- 🔍 **Visual markers** — Easy navigation via "Files changed" view
+
+**Example:** If AI finds a security issue on line 42 of `auth.ts`, it posts:
+```
+⚠️ HIGH - SECURITY
+Hardcoded credentials detected
+
+Suggested fix:
+```suggestion
+const password = process.env.DB_PASSWORD;
+```
+```
+
+**Supported platforms:**
+- ✅ GitHub (with native `suggestion` blocks)
+- ✅ GitLab (with inline discussions)
+- ✅ Bitbucket Cloud & Server (with inline anchors)
+
+**Disable if needed:**
+```yaml
+aiEnableInlineComments: false
+```
+
+---
+
 ### Can I customize what the AI looks for?
 
 Yes! Use `aiReviewContext`:

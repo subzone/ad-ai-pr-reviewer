@@ -26,6 +26,20 @@ export interface GetDiffOptions {
   prNumber: number;
 }
 
+export interface ReviewComment {
+  path: string;            // File path
+  line: number;            // Line number in the new version
+  body: string;            // Comment text
+  suggestion?: string;     // Optional code suggestion
+}
+
+export interface PostReviewCommentsOptions {
+  repository: string;
+  prNumber: number;
+  comments: ReviewComment[];
+  commitId?: string;       // Optional: specific commit to comment on
+}
+
 export interface ProviderConfig {
   accessToken: string;
   serverUrl?: string;
@@ -36,6 +50,7 @@ export interface Provider {
   findExistingPR(repository: string, sourceBranch: string, targetBranch: string): Promise<PullRequest | null>;
   postComment(options: PostCommentOptions): Promise<void>;
   getDiff(options: GetDiffOptions): Promise<string>;
+  postReviewComments?(options: PostReviewCommentsOptions): Promise<void>;  // Optional for inline comments
 }
 
 export function formatAiComment(body: string): string {

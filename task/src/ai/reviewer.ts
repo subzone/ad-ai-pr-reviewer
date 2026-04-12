@@ -389,6 +389,116 @@ async function executeTool(
   }
 }
 
+// ── Diff parsing utilities ─────────────────────────────────────────────────────
+
+/**
+ * Parse diff and extract line number for a specific diffLines text.
+ * 
+ * @param diff - Full unified diff content
+ * @param file - File path (e.g., "src/auth/login.ts")
+ * @param diffLineText - The actual diff line text (e.g., "+ const password = req.body.password")
+ * @returns Line number in the new file version, or null if not found
+ */
+export function extractLineNumber(diff: string, file: string, diffLineText: string): number | null {
+  const lines = diff.split('\n');
+  let currentFile = '';
+  let newLineNumber = 0;
+  let inCorrectFile = false;
+
+  // Normalize the search text (remove leading +/-)
+  const searchText = diffLineText.replace(/^[+\- ]/, '').trim();
+
+  for (const line of lines) {
+    // Track current file
+    if (line.startsWith('+++')) {
+      const match = line.match(/^\+\+\+ b\/(.+)/);
+      if (match) {
+        currentFile = match[1];
+        inCorrectFile = currentFile === file;
+        newLineNumber = 0;
+      }
+      continue;
+    }
+
+    // Skip if not in the correct file
+    if (!inCorrectFile) continue;
+
+    // Parse diff chunk headers (@@ -10,5 +10,6 @@)
+    if (line.startsWith('@@')) {
+      const match = line.match(/@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/);
+      if (match) {
+        newLineNumber = parseInt(match[1], 10) - 1;  // Start from line before
+      }
+      continue;
+    }
+
+    // Track line numbers
+    if (line.startsWith('+')) {
+      newLineNumber++;
+      // Check if this is the line we're looking for
+      const lineContent = line.substring(1).trim();
+      if (lineContent === searchText) {
+        return newLineNumber;
+      }
+    } else if (line.startsWith('-')) {
+      // Deleted lines don't increment new file line number
+      continue;
+    } else if (line.startsWith(' ')) {
+      // Context lines increment line number
+      newLineNumber++;
+    }
+  }
+
+  return null;  // Line not found
+}
+
+/**
+ * Convert structured findings to inline review comments.
+ * 
+ * @param findings - Structured findings from AI review
+ * @param diff - Full unified diff
+ * @returns Array of review comments ready to post
+ */
+export function convertFindingsToComments(
+  findings: Finding[],
+  diff: string,
+): Array<{ path: string; line: number; body: string; suggestion?: string }> {
+  const comments: Array<{ path: string; line: number; body: string; suggestion?: string }> = [];
+
+  for (const finding of findings) {
+    // Skip findings without diffLines (can't create inline comment)
+    if (!finding.diffLines || !finding.file) continue;
+
+    // Extract line number from diff
+    const lineNumber = extractLineNumber(diff, finding.file, finding.diffLines);
+    if (lineNumber === null) {
+      console.warn(`⚠️  Could not find line number for finding in ${finding.file}: ${finding.diffLines.substring(0, 50)}`);
+      continue;
+    }
+
+    // Create comment body
+    const severityEmoji = {
+      critical: '🚨',
+      high: '⚠️',
+      medium: '💡',
+      low: 'ℹ️',
+      info: '📝',
+    }[finding.severity];
+
+    const categoryLabel = finding.category.replace(/-/g, ' ').toUpperCase();
+    const body = `${severityEmoji} **${finding.severity.toUpperCase()} - ${categoryLabel}**\n\n**${finding.title}**\n\n${finding.description}`;
+
+    comments.push({
+      path: finding.file,
+      line: lineNumber,
+      body,
+      suggestion: finding.suggestion,
+    });
+  }
+
+  return comments;
+}
+
 // ── Entry point ────────────────────────────────────────────────────────────────
 
 export async function reviewPullRequest(

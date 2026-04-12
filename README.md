@@ -31,6 +31,7 @@ An Azure DevOps pipeline task that creates pull requests and posts **AI-generate
 
 - **Create PRs** on GitHub, GitLab, Bitbucket Cloud, or Bitbucket Server from any ADO pipeline
 - **AI code review** powered by [Claude](https://anthropic.com) — posts a structured review comment directly on the PR
+- **🆕 Inline code suggestions** — AI posts comments directly on changed lines with one-click fixes (GitHub suggestion blocks)
 - **🆕 Specialized review skills** — Domain-specific expert reviewers (security, performance, database, API, accessibility)
 - **Multiple AI hosting options** — Anthropic direct, Azure AI Foundry, AWS Bedrock, Google Vertex AI, or LiteLLM
 - **Per-file review mode** — reviews each file individually then synthesizes findings

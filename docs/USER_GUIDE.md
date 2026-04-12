@@ -70,7 +70,7 @@ steps:
 
 Trigger via: **Pipelines → Run pipeline → enter PR number**
 
-**Advanced: with reasoning and cost tracking:**
+**Advanced: with reasoning, inline comments, and cost tracking:**
 
 ```yaml
 trigger: none
@@ -97,6 +97,7 @@ steps:
     aiApiKey: $(ANTHROPIC_API_KEY)
     aiModel: claude-sonnet-4-6
     aiEnableReasoning: true           # Show AI's thought process in logs
+    aiEnableInlineComments: true      # Post findings as inline code comments with suggestions
     aiReviewContext: |
       Focus on security and performance.
       This repo handles sensitive user data.
@@ -714,6 +715,158 @@ Skills provide specialized expertise but increase token usage:
 - Advanced configuration strategies
 - Troubleshooting guide
 - Cost optimization techniques
+
+---
+
+## Inline Code Comments & Suggestions
+
+The AI posts findings as **inline comments directly on changed code lines** with actionable fix suggestions.
+
+### Overview
+
+Instead of a single wall-of-text review comment, you get:
+- 🎯 **Precise annotations** at the exact problematic line
+- 🔧 **One-click fixes** via GitHub suggestion blocks
+- 💬 **Threaded discussions** for each finding
+- 🔍 **Visual navigation** in "Files changed" view
+
+### Example
+
+**Finding from AI:**
+```json
+{
+  "severity": "high",
+  "category": "security",
+  "title": "Hardcoded credentials",
+  "file": "src/database.ts",
+  "diffLines": "+ const password = 'admin123'",
+  "suggestion": "const password = process.env.DB_PASSWORD"
+}
+```
+
+**Posted as inline comment on src/database.ts at line 42:**
+
+```markdown
+⚠️ **HIGH - SECURITY**
+
+**Hardcoded credentials**
+
+Sensitive credentials should never be stored in source code.
+
+```suggestion
+const password = process.env.DB_PASSWORD
+```
+```
+
+**Developer clicks "Commit suggestion" → Fixed instantly!** ✨
+
+### Configuration
+
+**Enabled by default:**
+```yaml
+- task: AiPrReviewer@1
+  inputs:
+    enableAiReview: true
+    aiEnableInlineComments: true  # Default
+```
+
+**Disable if you only want the summary comment:**
+```yaml
+aiEnableInlineComments: false
+```
+
+### Platform Support
+
+| Provider | Inline Comments | Code Suggestions | Notes |
+|---|---|---|---|
+| **GitHub** | ✅ | ✅ | Native ```suggestion blocks (one-click apply) |
+| **GitLab** | ✅ | ✅ | Position-based discussions |
+| **Bitbucket Cloud** | ✅ | ✅ | Inline anchors |
+| **Bitbucket Server** | ✅ | ✅ | Anchor-based comments |
+
+### How It Works
+
+1. **AI analyzes diff** and generates structured findings with:
+   - `file`: File path
+   - `diffLines`: Actual code line (e.g., `+ const x = 5`)
+   - `suggestion`: Recommended fix
+
+2. **Diff parser maps to line numbers**:
+   - Parses unified diff format (`@@ -10,5 +10,6 @@`)
+   - Tracks additions (+), deletions (-), context ( )
+   - Extracts exact line number in new file version
+
+3. **Provider posts inline comments**:
+   - GitHub: `pulls.createReview()` with comments array + `suggestion` blocks
+   - GitLab: Discussions API with position object
+   - Bitbucket: Inline comment API with line anchors
+
+### With Skills Mode
+
+When using specialized review skills, inline comments include skill metadata:
+
+```yaml
+aiEnableSkills: true
+aiSkills: security,performance
+aiEnableInlineComments: true
+```
+
+**Output:**
+```markdown
+🚨 **CRITICAL - SECURITY**
+
+**[Security Skill] SQL Injection Vulnerability**
+
+User input concatenated into SQL query without sanitization.
+
+```suggestion
+const result = await db.query(
+  "SELECT * FROM users WHERE id = ?",
+  [req.params.id]
+);
+```
+
+**Confidence:** 95%
+```
+
+### Graceful Handling
+
+**Missing line numbers:**
+- If exact line can't be determined from diff, finding still appears in main review
+- Warning logged: `⚠️ Could not find line number for finding in auth.ts`
+- No incorrect inline comments posted
+
+**Unsupported providers:**
+- Falls back to main review comment
+- No errors thrown
+
+**Large PRs:**
+- All findings with valid line numbers get inline comments
+- Main review comment includes summary + full findings list
+
+### Best Practices
+
+✅ **Enable for:**
+- Security-critical reviews (precise vulnerability locations)
+- Performance optimization (exact inefficient patterns)
+- Code quality enforcement (specific style/best-practice violations)
+- Skills mode (expert findings from multiple domains)
+
+❌ **Consider disabling for:**
+- Draft PRs with 100+ findings (overwhelming)
+- Dependency update PRs (low signal)
+- Auto-generated code reviews
+
+### Pipeline Output
+
+```bash
+Converting 18 findings to inline comments...
+Posting 15 inline code comments...
+✅ Posted 15 inline comments with code suggestions
+
+# 3 findings skipped (line numbers not found)
+# All findings still visible in main review comment
+```
 
 ---
 

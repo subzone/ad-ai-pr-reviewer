@@ -3,7 +3,7 @@ import { Provider, formatAiComment, formatManualComment } from './providers/base
 import { GitHubProvider } from './providers/github';
 import { GitLabProvider } from './providers/gitlab';
 import { BitbucketProvider } from './providers/bitbucket';
-import { reviewPullRequest, AiProviderConfig } from './ai/reviewer';
+import { reviewPullRequest, AiProviderConfig, convertFindingsToComments } from './ai/reviewer';
 
 async function run(): Promise<void> {
   try {
@@ -33,6 +33,7 @@ async function run(): Promise<void> {
     const aiEnableSkills = tl.getBoolInput('aiEnableSkills', false);
     const aiSkills = tl.getInput('aiSkills', false) ?? 'security,performance';
     const aiSkillAutoDetect = tl.getBoolInput('aiSkillAutoDetect', false);
+    const aiEnableInlineComments = tl.getBoolInput('aiEnableInlineComments', false);
     const repositoryPath = tl.getVariable('Build.SourcesDirectory') || process.cwd();
 
     // ── AI provider config ────────────────────────────────────────────────────
@@ -66,6 +67,7 @@ async function run(): Promise<void> {
           aiEnableSkills,
           aiSkills,
           aiSkillAutoDetect,
+          aiEnableInlineComments,
           repositoryPath,
         });
         break;
@@ -89,6 +91,7 @@ async function run(): Promise<void> {
           aiEnableSkills,
           aiSkills,
           aiSkillAutoDetect,
+          aiEnableInlineComments,
           repositoryPath,
         });
         break;
@@ -136,6 +139,7 @@ interface CreatePRParams {
   aiEnableSkills: boolean;
   aiSkills: string;
   aiSkillAutoDetect: boolean;
+  aiEnableInlineComments: boolean;
   repositoryPath: string;
 }
 
@@ -145,7 +149,7 @@ async function handleCreatePR(params: CreatePRParams): Promise<void> {
     prTitle, prDescription, failOnExistingPR,
     enableAiReview, aiProviderConfig, aiModel, aiReviewContext, aiMaxDiffLines,
     aiReviewMode, aiMaxFiles, aiEnableReasoning, aiEnableTools,
-    aiEnableSkills, aiSkills, aiSkillAutoDetect, repositoryPath,
+    aiEnableSkills, aiSkills, aiSkillAutoDetect, aiEnableInlineComments, repositoryPath,
   } = params;
 
   console.log(`Checking for existing PR: ${sourceBranch} → ${targetBranch} in ${repository}`);
@@ -165,7 +169,8 @@ async function handleCreatePR(params: CreatePRParams): Promise<void> {
         provider, repository, prNumber: existing.number,
         prTitle: existing.title, prDescription,
         aiProviderConfig, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
-        aiEnableReasoning, aiEnableTools, aiEnableSkills, aiSkills, aiSkillAutoDetect, repositoryPath,
+        aiEnableReasoning, aiEnableTools, aiEnableSkills, aiSkills, aiSkillAutoDetect,
+        aiEnableInlineComments, repositoryPath,
       });
     }
     return;
@@ -185,7 +190,8 @@ async function handleCreatePR(params: CreatePRParams): Promise<void> {
       provider, repository, prNumber: pr.number,
       prTitle: pr.title, prDescription,
       aiProviderConfig, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
-      aiEnableReasoning, aiEnableTools, aiEnableSkills, aiSkills, aiSkillAutoDetect, repositoryPath,
+      aiEnableReasoning, aiEnableTools, aiEnableSkills, aiSkills, aiSkillAutoDetect,
+      aiEnableInlineComments, repositoryPath,
     });
   }
 
@@ -209,6 +215,7 @@ interface ReviewPRParams {
   aiEnableSkills: boolean;
   aiSkills: string;
   aiSkillAutoDetect: boolean;
+  aiEnableInlineComments: boolean;
   repositoryPath: string;
 }
 
@@ -264,6 +271,7 @@ interface AiReviewParams {
   aiEnableSkills: boolean;
   aiSkills: string;
   aiSkillAutoDetect: boolean;
+  aiEnableInlineComments: boolean;
   repositoryPath: string;
 }
 
@@ -271,7 +279,8 @@ async function runAiReview(params: AiReviewParams): Promise<void> {
   const {
     provider, repository, prNumber, prTitle, prDescription,
     aiProviderConfig, aiModel, aiReviewContext, aiMaxDiffLines, aiReviewMode, aiMaxFiles,
-    aiEnableReasoning, aiEnableTools, aiEnableSkills, aiSkills, aiSkillAutoDetect, repositoryPath,
+    aiEnableReasoning, aiEnableTools, aiEnableSkills, aiSkills, aiSkillAutoDetect,
+    aiEnableInlineComments, repositoryPath,
   } = params;
 
   console.log(`Fetching diff for PR #${prNumber}...`);
@@ -341,6 +350,32 @@ async function runAiReview(params: AiReviewParams): Promise<void> {
   const formattedComment = formatAiComment(result.fullComment);
   console.log(`Posting AI review comment: ${result.summary}`);
   await provider.postComment({ repository, prNumber, body: formattedComment });
+
+  // Post inline comments if enabled and provider supports it
+  if (aiEnableInlineComments && result.structuredFindings && result.structuredFindings.length > 0) {
+    if (provider.postReviewComments) {
+      console.log(`Converting ${result.structuredFindings.length} findings to inline comments...`);
+      const comments = convertFindingsToComments(result.structuredFindings, diff);
+      
+      if (comments.length > 0) {
+        console.log(`Posting ${comments.length} inline code comments...`);
+        await provider.postReviewComments({
+          repository,
+          prNumber,
+          comments,
+          // Get commit SHA from the latest diff (some providers need it)
+          commitId: undefined,  // Providers will fetch if needed
+        });
+        console.log(`✅ Posted ${comments.length} inline comments with code suggestions`);
+      } else {
+        console.log('⚠️  No inline comments could be created (line numbers not found in diff)');
+      }
+    } else {
+      console.log('⚠️  Provider does not support inline comments, skipping');
+    }
+  } else if (aiEnableInlineComments && (!result.structuredFindings || result.structuredFindings.length === 0)) {
+    console.log('ℹ️  No structured findings available for inline comments');
+  }
 
   tl.setVariable('ReviewSummary', result.summary);
   tl.setVariable('ReviewVerdict', result.verdict);

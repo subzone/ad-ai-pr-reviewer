@@ -5,6 +5,8 @@ import {
   PullRequest,
   CreatePROptions,
   PostCommentOptions,
+  PostReviewCommentsOptions,
+  ReviewComment,
   GetDiffOptions,
 } from './base';
 
@@ -81,6 +83,33 @@ export class GitLabProvider implements Provider {
       `/projects/${projectId}/merge_requests/${options.prNumber}/notes`,
       { body: options.body },
     );
+  }
+
+  async postReviewComments(options: PostReviewCommentsOptions): Promise<void> {
+    const projectId = this.encodeProject(options.repository);
+
+    // GitLab uses discussions API with position for inline comments
+    for (const comment of options.comments) {
+      const body = comment.suggestion
+        ? `🤖 **AI Review**\n\n${comment.body}\n\n**Suggested fix:**\n\`\`\`suggestion\n${comment.suggestion}\n\`\`\``
+        : `🤖 **AI Review**\n\n${comment.body}`;
+
+      // Create a discussion on a specific line
+      await this.client.post(
+        `/projects/${projectId}/merge_requests/${options.prNumber}/discussions`,
+        {
+          body,
+          position: {
+            base_sha: options.commitId,
+            start_sha: options.commitId,
+            head_sha: options.commitId,
+            position_type: 'text',
+            new_path: comment.path,
+            new_line: comment.line,
+          },
+        },
+      );
+    }
   }
 
   async getDiff(options: GetDiffOptions): Promise<string> {

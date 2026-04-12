@@ -236,6 +236,161 @@ aiSkills: security,performance,database,api
 
 ---
 
+## Inline Code Comments
+
+When `aiEnableInlineComments` is enabled (default), AI findings are posted as **inline comments directly on the changed code lines** with actionable suggestions.
+
+### What You Get
+
+🎯 **Precise location** — Issues appear exactly where they occur in your code
+
+🔧 **One-click fixes** — GitHub shows suggestions as clickable code blocks
+
+💬 **Threaded discussions** — Reply and resolve inline, not in a wall of text
+
+🔍 **Visual markers** — Navigate via "Files changed" view with comment badges
+
+### Example Output
+
+**GitHub:**
+```markdown
+⚠️ **HIGH - SECURITY**
+
+**Hardcoded database credentials**
+
+Sensitive credentials stored in source code pose a security risk.
+
+```suggestion
+const dbPassword = process.env.DB_PASSWORD;
+```
+```
+
+**Developers can click "Commit suggestion"** to apply the fix instantly!
+
+### Platform Support
+
+| Platform | Inline Comments | Code Suggestions | Notes |
+|---|---|---|---|
+| **GitHub** | ✅ | ✅ | Native ```suggestion blocks — one-click apply |
+| **GitLab** | ✅ | ✅ | Uses discussions API with position anchors |
+| **Bitbucket Cloud** | ✅ | ✅ | Inline anchors with suggestion formatting |
+| **Bitbucket Server** | ✅ | ✅ | Anchor-based comments with line positions |
+
+### How It Works
+
+1. **AI generates structured findings** with:
+   - `file`: Path to the file (e.g., `src/auth/login.ts`)
+   - `diffLines`: The actual code line (e.g., `+ const password = "secret"`)
+   - `suggestion`: Recommended fix
+
+2. **Diff parser extracts line numbers**:
+   - Parses unified diff format (`@@ -10,5 +10,6 @@`)
+   - Maps diff lines to actual file positions
+   - Handles additions, deletions, context lines
+
+3. **Provider posts inline comments**:
+   - GitHub: `pulls.createReview()` with comments array
+   - GitLab: Discussions API with position object
+   - Bitbucket: Inline comment API with anchors
+
+### Configuration
+
+**Enable (default):**
+```yaml
+aiEnableInlineComments: true
+```
+
+**Disable:**
+```yaml
+aiEnableInlineComments: false  # Only post main review comment
+```
+
+**Works with all review modes:**
+```yaml
+# Standard mode
+aiReviewMode: standard
+aiEnableInlineComments: true
+
+# Per-file mode
+aiReviewMode: per-file
+aiEnableInlineComments: true
+
+# With skills
+aiEnableSkills: true
+aiSkills: security,performance
+aiEnableInlineComments: true  # Findings from all skills posted inline
+```
+
+### Skill Output Integration
+
+When skills find issues, inline comments include skill metadata:
+
+```markdown
+🚨 **CRITICAL - SECURITY** 
+
+**[Security Skill] SQL Injection Vulnerability**
+
+User input concatenated directly into SQL query.
+
+Lines +45-47:
+```diff
++ const query = "SELECT * FROM users WHERE id = " + req.params.id;
++ const result = await db.query(query);
+```
+
+```suggestion
+const result = await db.query(
+  "SELECT * FROM users WHERE id = ?",
+  [req.params.id]
+);
+```
+
+**Impact:** High — Allows arbitrary database access
+**Confidence:** 95%
+```
+
+### Graceful Fallbacks
+
+**If line number not found:**
+- Warning logged: `⚠️ Could not find line number for finding in auth.ts`
+- Finding still appears in main review comment
+- No inline comment created (avoids incorrect placement)
+
+**If provider doesn't support inline comments:**
+- Logged: `⚠️ Provider does not support inline comments, skipping`
+- All findings appear in main review comment
+- No errors thrown
+
+**If no findings have diffLines:**
+- Logged: `ℹ️ No structured findings available for inline comments`
+- Standard review comment posted
+- No inline comments attempted
+
+### Best Practices
+
+✅ **Keep enabled for:**
+- Security reviews (precise vulnerability locations)
+- Performance issues (exact inefficient code)
+- API breaking changes (specific endpoint problems)
+- Skills mode (multiple expert findings)
+
+❌ **Consider disabling for:**
+- Very large PRs (100+ findings might be overwhelming)
+- Exploratory draft PRs (prefer summary only)
+- Low-priority automated updates (reduce noise)
+
+### Log Output
+
+```bash
+Converting 15 findings to inline comments...
+Posting 12 inline code comments...
+✅ Posted 12 inline comments with code suggestions
+
+# Skipped 3 findings where line numbers couldn't be determined
+```
+
+---
+
 ## Performance & Cost
 
 ### Execution Speed

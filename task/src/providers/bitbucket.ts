@@ -5,6 +5,8 @@ import {
   PullRequest,
   CreatePROptions,
   PostCommentOptions,
+  PostReviewCommentsOptions,
+  ReviewComment,
   GetDiffOptions,
 } from './base';
 
@@ -102,6 +104,30 @@ export class BitbucketProvider implements Provider {
     );
   }
 
+  private async postCloudReviewComments(
+    options: PostReviewCommentsOptions,
+  ): Promise<void> {
+    const { workspace, slug } = this.parseRepo(options.repository);
+
+    // Bitbucket Cloud uses inline comments with line anchors
+    for (const comment of options.comments) {
+      const body = comment.suggestion
+        ? `🤖 **AI Review**\n\n${comment.body}\n\n**Suggested fix:**\n\`\`\`\n${comment.suggestion}\n\`\`\``
+        : `🤖 **AI Review**\n\n${comment.body}`;
+
+      await this.client.post(
+        `/repositories/${workspace}/${slug}/pullrequests/${options.prNumber}/comments`,
+        {
+          content: { raw: body },
+          inline: {
+            path: comment.path,
+            to: comment.line,
+          },
+        },
+      );
+    }
+  }
+
   private async getCloudDiff(options: GetDiffOptions): Promise<string> {
     const { workspace, slug } = this.parseRepo(options.repository);
 
@@ -178,6 +204,31 @@ export class BitbucketProvider implements Provider {
     );
   }
 
+  private async postServerReviewComments(
+    options: PostReviewCommentsOptions,
+  ): Promise<void> {
+    const { workspace, slug } = this.parseRepo(options.repository);
+
+    // Bitbucket Server uses inline comments with anchor
+    for (const comment of options.comments) {
+      const body = comment.suggestion
+        ? `🤖 **AI Review**\n\n${comment.body}\n\n**Suggested fix:**\n\`\`\`\n${comment.suggestion}\n\`\`\``
+        : `🤖 **AI Review**\n\n${comment.body}`;
+
+      await this.client.post(
+        `/projects/${workspace}/repos/${slug}/pull-requests/${options.prNumber}/comments`,
+        {
+          text: body,
+          anchor: {
+            path: comment.path,
+            line: comment.line,
+            lineType: 'ADDED',
+          },
+        },
+      );
+    }
+  }
+
   private async getServerDiff(options: GetDiffOptions): Promise<string> {
     const { workspace, slug } = this.parseRepo(options.repository);
 
@@ -209,6 +260,12 @@ export class BitbucketProvider implements Provider {
     return this.isServer
       ? this.postServerComment(options)
       : this.postCloudComment(options);
+  }
+
+  async postReviewComments(options: PostReviewCommentsOptions): Promise<void> {
+    return this.isServer
+      ? this.postServerReviewComments(options)
+      : this.postCloudReviewComments(options);
   }
 
   async getDiff(options: GetDiffOptions): Promise<string> {

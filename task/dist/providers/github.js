@@ -73,5 +73,39 @@ class GitHubProvider {
         });
         return data;
     }
+    async postReviewComments(options) {
+        const { owner, repo } = this.parseRepo(options.repository);
+        if (options.comments.length === 0) {
+            return;
+        }
+        // Format comments with GitHub suggestion blocks
+        const formattedComments = options.comments.map((comment) => {
+            let body = `🤖 **AI Review** · ${comment.body}`;
+            // If there's a suggestion, format it as a GitHub suggestion block
+            if (comment.suggestion) {
+                body += '\n\n```suggestion\n' + comment.suggestion + '\n```';
+            }
+            return {
+                path: comment.path,
+                line: comment.line,
+                body,
+            };
+        });
+        // Get the latest commit SHA for the PR
+        const { data: pr } = await this.client.pulls.get({
+            owner,
+            repo,
+            pull_number: options.prNumber,
+        });
+        // Post as a review with inline comments
+        await this.client.pulls.createReview({
+            owner,
+            repo,
+            pull_number: options.prNumber,
+            commit_id: options.commitId || pr.head.sha,
+            event: 'COMMENT',
+            comments: formattedComments,
+        });
+    }
 }
 exports.GitHubProvider = GitHubProvider;

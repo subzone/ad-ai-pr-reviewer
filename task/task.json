@@ -309,6 +309,16 @@
       "visibleRule": "aiEnableSkills = true"
     },
     {
+      "name": "aiEnableInlineComments",
+      "type": "boolean",
+      "label": "Post Inline Code Comments",
+      "defaultValue": "true",
+      "required": false,
+      "groupName": "ai",
+      "helpMarkDown": "Post AI findings as inline comments directly on the changed code lines with suggested fixes. Makes reviews more actionable - developers can see issues at the exact location and accept suggestions with one click. Supports GitHub, GitLab, and Bitbucket.",
+      "visibleRule": "enableAiReview = true"
+    },
+    {
       "name": "awsAccessKeyId",
       "type": "string",
       "label": "AWS Access Key ID",

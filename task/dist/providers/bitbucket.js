@@ -70,6 +70,22 @@ class BitbucketProvider {
         const { workspace, slug } = this.parseRepo(options.repository);
         await this.client.post(`/repositories/${workspace}/${slug}/pullrequests/${options.prNumber}/comments`, { content: { raw: options.body } });
     }
+    async postCloudReviewComments(options) {
+        const { workspace, slug } = this.parseRepo(options.repository);
+        // Bitbucket Cloud uses inline comments with line anchors
+        for (const comment of options.comments) {
+            const body = comment.suggestion
+                ? `🤖 **AI Review**\n\n${comment.body}\n\n**Suggested fix:**\n\`\`\`\n${comment.suggestion}\n\`\`\``
+                : `🤖 **AI Review**\n\n${comment.body}`;
+            await this.client.post(`/repositories/${workspace}/${slug}/pullrequests/${options.prNumber}/comments`, {
+                content: { raw: body },
+                inline: {
+                    path: comment.path,
+                    to: comment.line,
+                },
+            });
+        }
+    }
     async getCloudDiff(options) {
         const { workspace, slug } = this.parseRepo(options.repository);
         const { data } = await this.client.get(`/repositories/${workspace}/${slug}/pullrequests/${options.prNumber}/diff`, { responseType: 'text' });
@@ -115,6 +131,23 @@ class BitbucketProvider {
         const { workspace, slug } = this.parseRepo(options.repository);
         await this.client.post(`/projects/${workspace}/repos/${slug}/pull-requests/${options.prNumber}/comments`, { text: options.body });
     }
+    async postServerReviewComments(options) {
+        const { workspace, slug } = this.parseRepo(options.repository);
+        // Bitbucket Server uses inline comments with anchor
+        for (const comment of options.comments) {
+            const body = comment.suggestion
+                ? `🤖 **AI Review**\n\n${comment.body}\n\n**Suggested fix:**\n\`\`\`\n${comment.suggestion}\n\`\`\``
+                : `🤖 **AI Review**\n\n${comment.body}`;
+            await this.client.post(`/projects/${workspace}/repos/${slug}/pull-requests/${options.prNumber}/comments`, {
+                text: body,
+                anchor: {
+                    path: comment.path,
+                    line: comment.line,
+                    lineType: 'ADDED',
+                },
+            });
+        }
+    }
     async getServerDiff(options) {
         const { workspace, slug } = this.parseRepo(options.repository);
         const { data } = await this.client.get(`/projects/${workspace}/repos/${slug}/pull-requests/${options.prNumber}/diff`, { responseType: 'text' });
@@ -133,6 +166,11 @@ class BitbucketProvider {
         return this.isServer
             ? this.postServerComment(options)
             : this.postCloudComment(options);
+    }
+    async postReviewComments(options) {
+        return this.isServer
+            ? this.postServerReviewComments(options)
+            : this.postCloudReviewComments(options);
     }
     async getDiff(options) {
         return this.isServer ? this.getServerDiff(options) : this.getCloudDiff(options);
