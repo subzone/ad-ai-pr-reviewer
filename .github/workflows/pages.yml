@@ -3,6 +3,7 @@ name: Deploy GitHub Pages
 on:
   push:
     branches: [main]
+    tags: ['v*.*.*']
   workflow_dispatch:
 
 permissions:
@@ -23,6 +24,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # needed for git describe
+
+      - name: Inject version from latest tag
+        run: |
+          VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
+          if [ -n "$VERSION" ]; then
+            echo "Injecting version: $VERSION"
+            jq --arg v "$VERSION" '.version = $v' vss-extension.json > tmp.json && mv tmp.json vss-extension.json
+          fi
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
