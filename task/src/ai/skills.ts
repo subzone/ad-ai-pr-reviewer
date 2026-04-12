@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { callWithRetry } from './utils';
 
 // ── Skill Schema ───────────────────────────────────────────────────────────────
 
@@ -673,8 +674,8 @@ export async function executeSkill(
   }
   
   try {
-    const message = await client.messages.create(messageParams);
-    
+    const message = await callWithRetry<Anthropic.Message>(() => client.messages.create(messageParams));
+
     // Extract response
     const responseText = extractTextFromMessage(message);
     

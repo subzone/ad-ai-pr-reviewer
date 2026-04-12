@@ -8,6 +8,7 @@ exports.parseSkillIds = parseSkillIds;
 exports.executeSkill = executeSkill;
 exports.executeSkillsParallel = executeSkillsParallel;
 exports.mergeSkillResults = mergeSkillResults;
+const utils_1 = require("./utils");
 // ── Built-in Skills ────────────────────────────────────────────────────────────
 exports.BUILTIN_SKILLS = {
     security: {
@@ -528,7 +529,7 @@ options) {
         // Tools can be added in a future enhancement
     }
     try {
-        const message = await client.messages.create(messageParams);
+        const message = await (0, utils_1.callWithRetry)(() => client.messages.create(messageParams));
         // Extract response
         const responseText = extractTextFromMessage(message);
         // Parse findings

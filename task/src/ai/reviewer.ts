@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import AnthropicBedrock from '@anthropic-ai/bedrock-sdk';
 import AnthropicVertex from '@anthropic-ai/vertex-sdk';
+import { callWithRetry } from './utils';
 
 // ── Provider configuration ─────────────────────────────────────────────────────
 
@@ -538,7 +539,7 @@ async function reviewStandard(
     };
   }
 
-  const message = await client.messages.create(messageParams);
+  const message = await callWithRetry(() => client.messages.create(messageParams));
 
   // Extract reasoning and usage
   const reasoning = extractReasoning(message);
@@ -625,16 +626,21 @@ async function reviewPerFile(
   }
 
   // Process files (with batching for parallel execution)
-  const BATCH_SIZE = 3; // Process 3 files at a time
+  const BATCH_SIZE = 2; // Process 2 files at a time to stay within rate limits
+  const INTER_BATCH_DELAY_MS = 3_000; // 3s pause between batches to spread token usage
   const batches: FileAnalysis[][] = [];
   for (let i = 0; i < selected.length; i += BATCH_SIZE) {
     batches.push(selected.slice(i, i + BATCH_SIZE));
   }
-  
+
   for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
     const batch = batches[batchIdx];
     console.log(`\n📦 Batch ${batchIdx + 1}/${batches.length}: Processing ${batch.length} file(s)...`);
-    
+
+    if (batchIdx > 0) {
+      await new Promise(resolve => setTimeout(resolve, INTER_BATCH_DELAY_MS));
+    }
+
     // Process batch in parallel
     const batchResults = await Promise.all(
       batch.map(async (analysis) => {
@@ -866,7 +872,7 @@ Analyze the above diff and return valid JSON following the schema.`;
 
   while (iteration < MAX_TOOL_ITERATIONS) {
     messageParams.messages = conversationHistory;
-    message = await client.messages.create(messageParams);
+    message = await callWithRetry(() => client.messages.create(messageParams));
 
     // Accumulate usage
     const iterationUsage = extractUsage(message, model);
@@ -1221,7 +1227,7 @@ End your response with this exact block (choose one verdict, count only real iss
     };
   }
 
-  const message = await client.messages.create(messageParams);
+  const message = await callWithRetry(() => client.messages.create(messageParams));
 
   const reasoning = extractReasoning(message);
   const usage = extractUsage(message, model);

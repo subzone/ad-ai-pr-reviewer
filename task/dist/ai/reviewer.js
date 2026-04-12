@@ -43,6 +43,7 @@ exports.splitDiffByFile = splitDiffByFile;
 const sdk_1 = __importDefault(require("@anthropic-ai/sdk"));
 const bedrock_sdk_1 = __importDefault(require("@anthropic-ai/bedrock-sdk"));
 const vertex_sdk_1 = __importDefault(require("@anthropic-ai/vertex-sdk"));
+const utils_1 = require("./utils");
 function buildAiClient(config) {
     switch (config.provider) {
         case 'anthropic':
@@ -405,7 +406,7 @@ async function reviewStandard(client, options) {
             budget_tokens: 1024,
         };
     }
-    const message = await client.messages.create(messageParams);
+    const message = await (0, utils_1.callWithRetry)(() => client.messages.create(messageParams));
     // Extract reasoning and usage
     const reasoning = extractReasoning(message);
     const usage = extractUsage(message, model);
@@ -472,7 +473,8 @@ async function reviewPerFile(client, options) {
         }
     }
     // Process files (with batching for parallel execution)
-    const BATCH_SIZE = 3; // Process 3 files at a time
+    const BATCH_SIZE = 2; // Process 2 files at a time to stay within rate limits
+    const INTER_BATCH_DELAY_MS = 3000; // 3s pause between batches to spread token usage
     const batches = [];
     for (let i = 0; i < selected.length; i += BATCH_SIZE) {
         batches.push(selected.slice(i, i + BATCH_SIZE));
@@ -480,6 +482,9 @@ async function reviewPerFile(client, options) {
     for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
         const batch = batches[batchIdx];
         console.log(`\n📦 Batch ${batchIdx + 1}/${batches.length}: Processing ${batch.length} file(s)...`);
+        if (batchIdx > 0) {
+            await new Promise(resolve => setTimeout(resolve, INTER_BATCH_DELAY_MS));
+        }
         // Process batch in parallel
         const batchResults = await Promise.all(batch.map(async (analysis) => {
             if (useSkills) {
@@ -678,7 +683,7 @@ Analyze the above diff and return valid JSON following the schema.`;
     const toolCalls = [];
     while (iteration < MAX_TOOL_ITERATIONS) {
         messageParams.messages = conversationHistory;
-        message = await client.messages.create(messageParams);
+        message = await (0, utils_1.callWithRetry)(() => client.messages.create(messageParams));
         // Accumulate usage
         const iterationUsage = extractUsage(message, model);
         totalUsage.inputTokens += iterationUsage.inputTokens;
@@ -944,7 +949,7 @@ End your response with this exact block (choose one verdict, count only real iss
             budget_tokens: 1024,
         };
     }
-    const message = await client.messages.create(messageParams);
+    const message = await (0, utils_1.callWithRetry)(() => client.messages.create(messageParams));
     const reasoning = extractReasoning(message);
     const usage = extractUsage(message, model);
     // Log reasoning for synthesis
