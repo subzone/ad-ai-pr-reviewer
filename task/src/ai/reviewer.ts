@@ -406,8 +406,11 @@ export function extractLineNumber(diff: string, file: string, diffLineText: stri
   let newLineNumber = 0;
   let inCorrectFile = false;
 
-  // Normalize the search text (remove leading +/-)
+  // Normalize the search text (remove leading +/- and trim)
   const searchText = diffLineText.replace(/^[+\- ]/, '').trim();
+
+  // When a - line matches, record it and try to return the next + or context line instead
+  let deletedLineMatch = false;
 
   for (const line of lines) {
     // Track current file
@@ -417,36 +420,40 @@ export function extractLineNumber(diff: string, file: string, diffLineText: stri
         currentFile = match[1];
         inCorrectFile = currentFile === file;
         newLineNumber = 0;
+        deletedLineMatch = false;
       }
       continue;
     }
 
-    // Skip if not in the correct file
     if (!inCorrectFile) continue;
 
     // Parse diff chunk headers (@@ -10,5 +10,6 @@)
     if (line.startsWith('@@')) {
       const match = line.match(/@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/);
       if (match) {
-        newLineNumber = parseInt(match[1], 10) - 1;  // Start from line before
+        newLineNumber = parseInt(match[1], 10) - 1;
+        deletedLineMatch = false;
       }
       continue;
     }
 
-    // Track line numbers
     if (line.startsWith('+')) {
       newLineNumber++;
-      // Check if this is the line we're looking for
+      const lineContent = line.substring(1).trim();
+      // Direct match on added line
+      if (lineContent === searchText) return newLineNumber;
+      // Fallback: deleted line matched earlier — return the replacement + line
+      if (deletedLineMatch) return newLineNumber;
+    } else if (line.startsWith('-')) {
       const lineContent = line.substring(1).trim();
       if (lineContent === searchText) {
-        return newLineNumber;
+        // Mark that we matched a deleted line; next + or context line is the best anchor
+        deletedLineMatch = true;
       }
-    } else if (line.startsWith('-')) {
-      // Deleted lines don't increment new file line number
-      continue;
     } else if (line.startsWith(' ')) {
-      // Context lines increment line number
       newLineNumber++;
+      // Fallback: deleted line matched but no + line followed — use the context line
+      if (deletedLineMatch) return newLineNumber;
     }
   }
 
@@ -1818,8 +1825,8 @@ function validateReview(review: string, metadata: DiffMetadata): string[] {
   const reviewLength = review.length;
   const diffSize = metadata.totalLines;
   const ratio = reviewLength / diffSize;
-  
-  if (ratio > 5 && diffSize < 100) {
+
+  if (ratio > 150 && diffSize < 100 && reviewLength > 2000) {
     warnings.push(`Review is disproportionately long (${reviewLength} chars for ${diffSize} line diff) - may contain hallucinated detail`);
   }
 
