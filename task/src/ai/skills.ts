@@ -182,8 +182,8 @@ OUTPUT: Return structured JSON with findings array.`,
           {
             severity: 'critical',
             category: 'security',
-            title: expect.stringMatching(/SQL.*[Ii]njection/),
-            diffLines: expect.stringContaining('SELECT * FROM'),
+            title: 'SQL Injection',
+            diffLines: 'SELECT * FROM',
           }
         ],
         shouldNotFind: ['XSS', 'CSRF'],
@@ -202,7 +202,7 @@ OUTPUT: Return structured JSON with findings array.`,
           {
             severity: 'critical',
             category: 'security',
-            title: expect.stringMatching(/[Hh]ardcoded/),
+            title: 'Hardcoded Credentials',
           }
         ],
       },
