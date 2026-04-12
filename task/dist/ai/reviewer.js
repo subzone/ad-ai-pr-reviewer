@@ -745,20 +745,16 @@ Analyze the above diff and return valid JSON following the schema.`;
     }
     if (iteration >= MAX_TOOL_ITERATIONS) {
         console.log(`⚠️  Reached max tool iterations (${MAX_TOOL_ITERATIONS}) for ${file}`);
-        // If the last message has no text block the model is still mid-tool-loop.
-        // Send one final prompt asking it to wrap up, so extractText doesn't blow up.
+        // The loop ends with tool results as the last user turn. If the model hasn't
+        // produced a text block yet, make one final no-tools call so it is forced to
+        // respond with its JSON summary instead of requesting more tools.
         const lastHasText = message.content.some(b => b.type === 'text');
         if (!lastHasText) {
             console.log(`🔄 Requesting final summary for ${file} after tool iterations...`);
-            conversationHistory.push({ role: 'assistant', content: message.content });
-            conversationHistory.push({
-                role: 'user',
-                content: 'You have reached the tool use limit. Using only the information gathered so far, return your final JSON review following the required schema.',
-            });
-            messageParams.messages = conversationHistory;
-            // Remove tools so the model can't request more
-            delete messageParams.tools;
-            message = await (0, utils_1.callWithRetry)(() => client.messages.create(messageParams));
+            const finalParams = { ...messageParams };
+            delete finalParams.tools;
+            finalParams.messages = conversationHistory;
+            message = await (0, utils_1.callWithRetry)(() => client.messages.create(finalParams));
             const finalUsage = extractUsage(message, model);
             totalUsage.inputTokens += finalUsage.inputTokens;
             totalUsage.outputTokens += finalUsage.outputTokens;
