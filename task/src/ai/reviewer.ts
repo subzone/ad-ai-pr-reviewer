@@ -952,22 +952,43 @@ Analyze the above diff and return valid JSON following the schema.`;
   if (iteration >= MAX_TOOL_ITERATIONS) {
     console.log(`⚠️  Reached max tool iterations (${MAX_TOOL_ITERATIONS}) for ${file}`);
 
-    // The loop ends with tool results as the last user turn. If the model hasn't
-    // produced a text block yet, make one final no-tools call so it is forced to
-    // respond with its JSON summary instead of requesting more tools.
+    // If the last message has no text block the model hasn't produced its final summary yet.
+    // Build a fresh single-turn request using the collected tool results rather than
+    // replaying the conversation history, which avoids any tool_use/tool_result
+    // pairing issues in the message array.
     const lastHasText = message!.content.some(b => b.type === 'text');
     if (!lastHasText) {
       console.log(`🔄 Requesting final summary for ${file} after tool iterations...`);
-      const finalParams = { ...messageParams };
-      delete (finalParams as any).tools;
-      finalParams.messages = conversationHistory;
-      message = await callWithRetry(() => client.messages.create(finalParams));
 
-      const finalUsage = extractUsage(message, model);
-      totalUsage.inputTokens += finalUsage.inputTokens;
-      totalUsage.outputTokens += finalUsage.outputTokens;
-      totalUsage.totalTokens += finalUsage.totalTokens;
-      totalUsage.estimatedCost += finalUsage.estimatedCost;
+      const toolContext = toolCalls.length > 0
+        ? '\n\n## Additional Context (gathered via tools)\n\n' +
+          toolCalls.map(c =>
+            `**${c.tool}(${JSON.stringify(c.input)}):**\n${c.result}`,
+          ).join('\n\n')
+        : '';
+
+      try {
+        const finalParams: Anthropic.MessageCreateParamsNonStreaming = {
+          model,
+          max_tokens: messageParams.max_tokens,
+          system: messageParams.system as string,
+          messages: [{ role: 'user', content: userPrompt + toolContext }],
+          // no tools — forces a text response
+        };
+        message = await callWithRetry(() => client.messages.create(finalParams));
+
+        const finalUsage = extractUsage(message, model);
+        totalUsage.inputTokens += finalUsage.inputTokens;
+        totalUsage.outputTokens += finalUsage.outputTokens;
+        totalUsage.totalTokens += finalUsage.totalTokens;
+        totalUsage.estimatedCost += finalUsage.estimatedCost;
+      } catch (finalErr) {
+        console.warn(
+          `⚠️  Final summary request failed for ${file}: ` +
+          `${finalErr instanceof Error ? finalErr.message : String(finalErr)}`,
+        );
+        // message still has no text block — extractText returns '' → parseStructuredResponse fallback
+      }
     }
   }
 
