@@ -204,12 +204,25 @@ Comments are tagged automatically: `💬 AI PR Comment | Posted by AI PR Reviewe
 | `failOnExistingPR` | createPR | `false` | Fail if PR already exists |
 | `commentBody` | commentPR | — | Comment text (markdown supported) |
 | `enableAiReview` | createPR, reviewPR | `false` | Post AI review comment |
-| `aiApiKey` | createPR, reviewPR | — | Anthropic API key |
-| `aiModel` | createPR, reviewPR | `claude-sonnet-4-6` | Model to use |
-| `aiReviewContext` | createPR, reviewPR | — | Extra instructions for Claude |
+| `aiProvider` | createPR, reviewPR | `anthropic` | `anthropic` · `azure` · `azure-openai` · `bedrock` · `vertex` · `googleai` · `githubmodels` · `litellm` |
+| `aiApiKey` | createPR, reviewPR | — | API key for your AI provider |
+| `aiBaseUrl` | createPR, reviewPR | — | Base URL for `azure`, `azure-openai`, or `litellm` |
+| `aiModel` | createPR, reviewPR | `claude-sonnet-4-6` | Model name or deployment name |
+| `aiReviewContext` | createPR, reviewPR | — | Extra instructions for the AI reviewer |
 | `aiMaxDiffLines` | createPR, reviewPR | `500` | Truncate diff at this many lines |
-| `aiReviewMode` | createPR, reviewPR | `standard` | `standard` or `per-file` |
+| `aiReviewMode` | createPR, reviewPR | `standard` | `standard` (whole diff) or `per-file` (file-by-file) |
 | `aiMaxFiles` | createPR, reviewPR | `10` | Max files reviewed in `per-file` mode |
+| `aiEnableReasoning` | createPR, reviewPR | `false` | Enable extended thinking (Claude and compatible models only) |
+| `aiEnableTools` | createPR, reviewPR | `false` | Enable tool use for the AI reviewer |
+| `aiEnableSkills` | createPR, reviewPR | `false` | Enable specialized review skills (requires `per-file` mode) |
+| `aiSkills` | createPR, reviewPR | — | Comma-separated list of skills: `security`, `performance`, `database`, `api`, `accessibility` |
+| `aiSkillAutoDetect` | createPR, reviewPR | `false` | Auto-detect relevant skills based on file patterns |
+| `aiEnableInlineComments` | reviewPR | `true` | Post findings as inline comments on changed lines |
+| `awsAccessKeyId` | createPR, reviewPR | — | AWS access key ID (Bedrock; omit to use IAM role) |
+| `awsSecretAccessKey` | createPR, reviewPR | — | AWS secret access key (Bedrock; omit to use IAM role) |
+| `awsRegion` | createPR, reviewPR | — | AWS region for Bedrock (e.g. `us-east-1`) |
+| `gcpProjectId` | createPR, reviewPR | — | GCP project ID (Vertex AI) |
+| `gcpRegion` | createPR, reviewPR | `us-east5` | GCP region for Vertex AI |
 
 ---
 

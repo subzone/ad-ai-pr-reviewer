@@ -533,7 +533,7 @@
       <div class="stat-label">Git providers</div>
     </div>
     <div class="stat">
-      <div class="stat-num">5</div>
+      <div class="stat-num">8</div>
       <div class="stat-label">AI hosting options</div>
     </div>
     <div class="stat">
@@ -572,7 +572,7 @@
       <div class="feat-card">
         <div class="feat-icon">🌐</div>
         <h3>Multiple AI providers</h3>
-        <p>Run on Anthropic direct, Azure AI Foundry, AWS Bedrock, Google Vertex AI, or your own LiteLLM proxy. Your infrastructure, your choice.</p>
+        <p>Run on Anthropic direct, Azure AI Foundry, Azure OpenAI, AWS Bedrock, Google Vertex AI, Google AI Studio, GitHub Models, or your own LiteLLM proxy. Your infrastructure, your choice.</p>
       </div>
       <div class="feat-card">
         <div class="feat-icon">🔀</div>
@@ -614,8 +614,11 @@
         <div class="pill-list">
           <span class="pill">🟠 Anthropic (direct API)</span>
           <span class="pill">☁️ Azure AI Foundry</span>
+          <span class="pill">🔷 Azure OpenAI Service</span>
           <span class="pill">🟡 AWS Bedrock</span>
           <span class="pill">🔵 Google Vertex AI</span>
+          <span class="pill">🌟 Google AI Studio</span>
+          <span class="pill">🐙 GitHub Models</span>
           <span class="pill">⚡ LiteLLM proxy</span>
         </div>
       </div>
@@ -740,8 +743,11 @@
             <div class="cfg-opts">
               <button class="cfg-opt on" onclick="pick('aiProvider','anthropic',this)">Anthropic</button>
               <button class="cfg-opt" onclick="pick('aiProvider','azure',this)">Azure AI Foundry</button>
+              <button class="cfg-opt" onclick="pick('aiProvider','azure-openai',this)">Azure OpenAI</button>
               <button class="cfg-opt" onclick="pick('aiProvider','bedrock',this)">AWS Bedrock</button>
               <button class="cfg-opt" onclick="pick('aiProvider','vertex',this)">Google Vertex</button>
+              <button class="cfg-opt" onclick="pick('aiProvider','googleai',this)">Google AI Studio</button>
+              <button class="cfg-opt" onclick="pick('aiProvider','githubmodels',this)">GitHub Models</button>
               <button class="cfg-opt" onclick="pick('aiProvider','litellm',this)">LiteLLM</button>
             </div>
           </div>
@@ -1117,7 +1123,10 @@
         <div class="code-tab" onclick="showTab('gitlab', this)">GitLab</div>
         <div class="code-tab" onclick="showTab('bitbucket', this)">Bitbucket</div>
         <div class="code-tab" onclick="showTab('azure', this)">Azure AI Foundry</div>
+        <div class="code-tab" onclick="showTab('azure-openai', this)">Azure OpenAI</div>
         <div class="code-tab" onclick="showTab('bedrock', this)">AWS Bedrock</div>
+        <div class="code-tab" onclick="showTab('googleai', this)">Google AI Studio</div>
+        <div class="code-tab" onclick="showTab('githubmodels', this)">GitHub Models</div>
       </div>
 
       <div class="code-block active" id="tab-github">
@@ -1231,6 +1240,61 @@
     <span class="kw">awsSecretAccessKey</span>: <span class="var">$(AWS_SECRET_ACCESS_KEY)</span>  <span class="cmt"># omit to use IAM role</span>
     <span class="kw">aiModel</span>:          <span class="val">anthropic.claude-3-5-sonnet-20241022-v2:0</span></pre>
       </div>
+
+      <div class="code-block" id="tab-azure-openai">
+<pre><span class="kw">variables</span>:
+- <span class="kw">group</span>: <span class="val">ai-reviewer-secrets</span>   <span class="cmt"># GITHUB_PAT + AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT</span>
+
+<span class="kw">steps</span>:
+- <span class="kw">task</span>: <span class="val">AiPrReviewer@1</span>
+  <span class="kw">inputs</span>:
+    <span class="kw">action</span>:      <span class="val">reviewPR</span>
+    <span class="kw">provider</span>:    <span class="val">github</span>
+    <span class="kw">accessToken</span>: <span class="var">$(GITHUB_PAT)</span>
+    <span class="kw">repository</span>:  <span class="val">myorg/myrepo</span>
+    <span class="kw">prNumber</span>:    <span class="var">$(System.PullRequest.PullRequestNumber)</span>
+    <span class="kw">enableAiReview</span>: <span class="val">true</span>
+    <span class="kw">aiProvider</span>:  <span class="val">azure-openai</span>
+    <span class="kw">aiApiKey</span>:    <span class="var">$(AZURE_OPENAI_API_KEY)</span>
+    <span class="kw">aiBaseUrl</span>:   <span class="var">$(AZURE_OPENAI_ENDPOINT)</span>   <span class="cmt"># https://&lt;resource&gt;.openai.azure.com</span>
+    <span class="kw">aiModel</span>:     <span class="val">gpt-4o</span>                    <span class="cmt"># your deployment name</span></pre>
+      </div>
+
+      <div class="code-block" id="tab-googleai">
+<pre><span class="kw">variables</span>:
+- <span class="kw">group</span>: <span class="val">ai-reviewer-secrets</span>   <span class="cmt"># GITHUB_PAT + GOOGLE_AI_API_KEY</span>
+
+<span class="kw">steps</span>:
+- <span class="kw">task</span>: <span class="val">AiPrReviewer@1</span>
+  <span class="kw">inputs</span>:
+    <span class="kw">action</span>:      <span class="val">reviewPR</span>
+    <span class="kw">provider</span>:    <span class="val">github</span>
+    <span class="kw">accessToken</span>: <span class="var">$(GITHUB_PAT)</span>
+    <span class="kw">repository</span>:  <span class="val">myorg/myrepo</span>
+    <span class="kw">prNumber</span>:    <span class="var">$(System.PullRequest.PullRequestNumber)</span>
+    <span class="kw">enableAiReview</span>: <span class="val">true</span>
+    <span class="kw">aiProvider</span>:  <span class="val">googleai</span>
+    <span class="kw">aiApiKey</span>:    <span class="var">$(GOOGLE_AI_API_KEY)</span>       <span class="cmt"># from aistudio.google.com</span>
+    <span class="kw">aiModel</span>:     <span class="val">gemini-2.0-flash</span></pre>
+      </div>
+
+      <div class="code-block" id="tab-githubmodels">
+<pre><span class="kw">variables</span>:
+- <span class="kw">group</span>: <span class="val">ai-reviewer-secrets</span>   <span class="cmt"># GITHUB_PAT + GITHUB_MODELS_TOKEN</span>
+
+<span class="kw">steps</span>:
+- <span class="kw">task</span>: <span class="val">AiPrReviewer@1</span>
+  <span class="kw">inputs</span>:
+    <span class="kw">action</span>:      <span class="val">reviewPR</span>
+    <span class="kw">provider</span>:    <span class="val">github</span>
+    <span class="kw">accessToken</span>: <span class="var">$(GITHUB_PAT)</span>
+    <span class="kw">repository</span>:  <span class="val">myorg/myrepo</span>
+    <span class="kw">prNumber</span>:    <span class="var">$(System.PullRequest.PullRequestNumber)</span>
+    <span class="kw">enableAiReview</span>: <span class="val">true</span>
+    <span class="kw">aiProvider</span>:  <span class="val">githubmodels</span>
+    <span class="kw">aiApiKey</span>:    <span class="var">$(GITHUB_MODELS_TOKEN)</span>     <span class="cmt"># GitHub PAT with models:read scope</span>
+    <span class="kw">aiModel</span>:     <span class="val">gpt-4o</span></pre>
+      </div>
     </div>
   </div>
 </section>
@@ -1320,7 +1384,8 @@
       { val: 'claude-opus-4-6',             label: 'Opus (deepest)' },
       { val: 'claude-haiku-4-5-20251001',   label: 'Haiku (fastest)' }
     ],
-    azure:   null,
+    azure:        null,
+    'azure-openai': null,
     bedrock: [
       { val: 'anthropic.claude-3-5-sonnet-20241022-v2:0', label: 'Claude 3.5 Sonnet' },
       { val: 'anthropic.claude-3-opus-20240229-v1:0',     label: 'Claude 3 Opus' },
@@ -1330,25 +1395,43 @@
       { val: 'claude-sonnet-4-6', label: 'Sonnet (recommended)' },
       { val: 'claude-opus-4-6',   label: 'Opus (deepest)' }
     ],
+    googleai: [
+      { val: 'gemini-2.0-flash',   label: 'Gemini 2.0 Flash (recommended)' },
+      { val: 'gemini-1.5-pro',     label: 'Gemini 1.5 Pro' },
+      { val: 'gemini-1.5-flash',   label: 'Gemini 1.5 Flash (fastest)' }
+    ],
+    githubmodels: [
+      { val: 'gpt-4o',      label: 'GPT-4o (recommended)' },
+      { val: 'gpt-4o-mini', label: 'GPT-4o Mini (fast)' },
+      { val: 'phi-4',       label: 'Phi-4' }
+    ],
     litellm: null
   };
 
   const defaultModels = {
-    anthropic: 'claude-sonnet-4-6',
-    azure:     'claude-sonnet-4-6',
-    bedrock:   'anthropic.claude-3-5-sonnet-20241022-v2:0',
-    vertex:    'claude-sonnet-4-6',
-    litellm:   ''
+    anthropic:    'claude-sonnet-4-6',
+    azure:        'claude-sonnet-4-6',
+    'azure-openai': '',
+    bedrock:      'anthropic.claude-3-5-sonnet-20241022-v2:0',
+    vertex:       'claude-sonnet-4-6',
+    googleai:     'gemini-2.0-flash',
+    githubmodels: 'gpt-4o',
+    litellm:      ''
   };
 
   // Cost per 1M tokens (USD): { in, out }
   const modelCosts = {
-    'claude-sonnet-4-6':                              { in: 3,    out: 15    },
-    'claude-opus-4-6':                                { in: 15,   out: 75    },
-    'claude-haiku-4-5-20251001':                      { in: 0.80, out: 4     },
-    'anthropic.claude-3-5-sonnet-20241022-v2:0':      { in: 3,    out: 15    },
-    'anthropic.claude-3-opus-20240229-v1:0':          { in: 15,   out: 75    },
-    'anthropic.claude-3-haiku-20240307-v1:0':         { in: 0.25, out: 1.25  },
+    'claude-sonnet-4-6':                              { in: 3,     out: 15    },
+    'claude-opus-4-6':                                { in: 15,    out: 75    },
+    'claude-haiku-4-5-20251001':                      { in: 0.80,  out: 4     },
+    'anthropic.claude-3-5-sonnet-20241022-v2:0':      { in: 3,     out: 15    },
+    'anthropic.claude-3-opus-20240229-v1:0':          { in: 15,    out: 75    },
+    'anthropic.claude-3-haiku-20240307-v1:0':         { in: 0.25,  out: 1.25  },
+    'gemini-2.0-flash':                               { in: 0.10,  out: 0.40  },
+    'gemini-1.5-pro':                                 { in: 1.25,  out: 5     },
+    'gemini-1.5-flash':                               { in: 0.075, out: 0.30  },
+    'gpt-4o':                                         { in: 2.50,  out: 10    },
+    'gpt-4o-mini':                                    { in: 0.15,  out: 0.60  },
   };
   // Typical medium PR review token estimate
   const PR_INPUT_TOKENS = 40_000;
@@ -1394,8 +1477,8 @@
       container.style.display = 'none';
       inp.style.display = '';
       inp.value = cfg.model;
-      inp.placeholder = cfg.aiProvider === 'azure'
-        ? 'Deployment name (e.g. claude-sonnet-4-6)'
+      inp.placeholder = (cfg.aiProvider === 'azure' || cfg.aiProvider === 'azure-openai')
+        ? 'Deployment name (e.g. gpt-4o)'
         : 'Model name or path';
     } else {
       container.style.display = '';
@@ -1462,11 +1545,14 @@
       'bitbucket-server': 'BITBUCKET_PAT + BITBUCKET_SERVER_URL'
     };
     const a = {
-      'anthropic': 'ANTHROPIC_API_KEY',
-      'azure':     'AZURE_AI_API_KEY + AZURE_AI_ENDPOINT',
-      'bedrock':   'AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY',
-      'vertex':    'GCP_PROJECT_ID',
-      'litellm':   'LITELLM_API_KEY + LITELLM_BASE_URL'
+      'anthropic':    'ANTHROPIC_API_KEY',
+      'azure':        'AZURE_AI_API_KEY + AZURE_AI_ENDPOINT',
+      'azure-openai': 'AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT',
+      'bedrock':      'AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY',
+      'vertex':       'GCP_PROJECT_ID',
+      'googleai':     'GOOGLE_AI_API_KEY',
+      'githubmodels': 'GITHUB_MODELS_TOKEN',
+      'litellm':      'LITELLM_API_KEY + LITELLM_BASE_URL'
     };
     let s = g[cfg.git] || '';
     if (cfg.action !== 'commentPR') s += ' + ' + (a[cfg.aiProvider] || '');
@@ -1530,6 +1616,9 @@
       } else if (aiProvider === 'azure') {
         L.push('    aiApiKey:    $(AZURE_AI_API_KEY)');
         L.push('    aiBaseUrl:   $(AZURE_AI_ENDPOINT)   # https://&lt;resource&gt;.services.ai.azure.com/models');
+      } else if (aiProvider === 'azure-openai') {
+        L.push('    aiApiKey:    $(AZURE_OPENAI_API_KEY)');
+        L.push('    aiBaseUrl:   $(AZURE_OPENAI_ENDPOINT)   # https://&lt;resource&gt;.openai.azure.com');
       } else if (aiProvider === 'bedrock') {
         L.push('    awsRegion:          us-east-1');
         L.push('    awsAccessKeyId:     $(AWS_ACCESS_KEY_ID)      # omit for IAM role');
@@ -1537,6 +1626,10 @@
       } else if (aiProvider === 'vertex') {
         L.push('    gcpProjectId: $(GCP_PROJECT_ID)');
         L.push('    gcpRegion:    us-east5');
+      } else if (aiProvider === 'googleai') {
+        L.push('    aiApiKey:    $(GOOGLE_AI_API_KEY)');
+      } else if (aiProvider === 'githubmodels') {
+        L.push('    aiApiKey:    $(GITHUB_MODELS_TOKEN)');
       } else if (aiProvider === 'litellm') {
         L.push('    aiApiKey:    $(LITELLM_API_KEY)');
         L.push('    aiBaseUrl:   $(LITELLM_BASE_URL)');

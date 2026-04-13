@@ -733,7 +733,7 @@ A: No, skills require `aiReviewMode: per-file` for proper execution.
 A: Start with 1-2 (security + relevant domain), add more for critical PRs.
 
 **Q: Do skills work with all AI providers?**
-A: Yes, skills work with Anthropic, Azure, Bedrock, Vertex, and LiteLLM.
+A: Yes, skills work with all supported providers: Anthropic, Azure AI Foundry, Azure OpenAI, AWS Bedrock, Google Vertex AI, Google AI Studio, GitHub Models, and LiteLLM.
 
 **Q: Can skills use tools (file reading)?**
 A: Not yet. Skills currently analyze only the visible diff. Tool support coming soon.
