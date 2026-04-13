@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { callWithRetry } from './utils';
+import { AnthropicLike } from './reviewer';
 
 // ── Skill Schema ───────────────────────────────────────────────────────────────
 
@@ -73,6 +74,18 @@ export interface SkillReviewResult {
     filteredFindings: number;
     qualityRate: number;
   };
+}
+
+/**
+ * Options for executing skills
+ */
+export interface SkillExecutionOptions {
+  model?: string;
+  enableReasoning?: boolean;
+  enableTools?: boolean;
+  repositoryPath?: string;
+  prTitle?: string;
+  additionalContext?: string;
 }
 
 // ── Built-in Skills ────────────────────────────────────────────────────────────
@@ -632,15 +645,8 @@ export async function executeSkill(
   skill: ReviewSkill,
   file: string,
   diff: string,
-  client: any,  // AnthropicLike
-  options: {
-    model?: string;
-    enableReasoning?: boolean;
-    enableTools?: boolean;
-    repositoryPath?: string;
-    prTitle?: string;
-    additionalContext?: string;
-  }
+  client: AnthropicLike,
+  options: SkillExecutionOptions
 ): Promise<SkillReviewResult> {
   const startTime = Date.now();
   
@@ -650,8 +656,8 @@ export async function executeSkill(
   const userPrompt = buildSkillUserPrompt(skill, file, diff, options);
   
   const maxTokens = skill.maxTokens || (options.enableReasoning ? 4096 : 2048);
-  
-  const messageParams: any = {
+
+  const messageParams: Anthropic.MessageCreateParamsNonStreaming & { _expectJson?: boolean } = {
     model: options.model || 'claude-sonnet-4-6',
     max_tokens: maxTokens,
     system: systemPrompt,
@@ -736,7 +742,7 @@ function buildSkillUserPrompt(
   skill: ReviewSkill,
   file: string,
   diff: string,
-  options: { prTitle?: string; additionalContext?: string }
+  options: Pick<SkillExecutionOptions, 'prTitle' | 'additionalContext'>
 ): string {
   const lines: string[] = [];
   
@@ -763,7 +769,7 @@ function buildSkillUserPrompt(
 /**
  * Extract text from Anthropic message
  */
-function extractTextFromMessage(message: any): string {
+function extractTextFromMessage(message: Anthropic.Message): string {
   for (const block of message.content) {
     if (block.type === 'text') {
       return block.text;
@@ -771,6 +777,22 @@ function extractTextFromMessage(message: any): string {
   }
   console.warn('⚠️  No text content in AI response — using empty fallback');
   return '';
+}
+
+/**
+ * Interface for parsed JSON response from skills
+ */
+interface ParsedSkillResponse {
+  findings?: Array<{
+    severity?: string;
+    category?: string;
+    title?: string;
+    description?: string;
+    diffLines?: string;
+    suggestion?: string;
+    confidence?: number;
+  }>;
+  reasoning?: string[];
 }
 
 /**
@@ -787,17 +809,25 @@ function parseSkillResponse(text: string, file: string, skill: ReviewSkill): {
     return { findings: [] };
   }
 
-  const mapFindings = (parsed: any): { findings: SkillFinding[]; reasoning?: string[] } => {
-    const findings: SkillFinding[] = (parsed.findings || []).map((f: any) => ({
-      severity: f.severity || 'info',
-      category: f.category || skill.categories[0],
-      title: f.title || 'Untitled',
-      description: f.description || '',
-      file: file,
-      diffLines: f.diffLines,
-      suggestion: f.suggestion,
-      confidence: f.confidence,
-    }));
+  const mapFindings = (parsed: ParsedSkillResponse): { findings: SkillFinding[]; reasoning?: string[] } => {
+    const findings: SkillFinding[] = (parsed.findings || []).map((f) => {
+      const severity = f.severity || 'info';
+      const validSeverity: SkillFinding['severity'] =
+        ['critical', 'high', 'medium', 'low', 'info'].includes(severity)
+          ? severity as SkillFinding['severity']
+          : 'info';
+
+      return {
+        severity: validSeverity,
+        category: f.category || skill.categories[0],
+        title: f.title || 'Untitled',
+        description: f.description || '',
+        file: file,
+        diffLines: f.diffLines,
+        suggestion: f.suggestion,
+        confidence: f.confidence,
+      };
+    });
     return { findings, reasoning: parsed.reasoning };
   };
 
@@ -938,8 +968,8 @@ export async function executeSkillsParallel(
   skills: ReviewSkill[],
   file: string,
   diff: string,
-  client: any,
-  options: any
+  client: AnthropicLike,
+  options: SkillExecutionOptions
 ): Promise<SkillReviewResult[]> {
   console.log(`  Running ${skills.length} skill(s) for ${file}: ${skills.map(s => s.name).join(', ')}`);
   

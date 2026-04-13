@@ -17,7 +17,7 @@ export type AiProviderConfig =
   | { provider: 'githubmodels'; apiKey: string };
 
 // Minimal duck-typed interface satisfied by Anthropic, AnthropicBedrock, and AnthropicVertex
-type AnthropicLike = {
+export type AnthropicLike = {
   messages: {
     create(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message>;
   };

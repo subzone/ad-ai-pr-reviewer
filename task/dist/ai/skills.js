@@ -504,8 +504,7 @@ function parseSkillIds(skillsInput) {
 /**
  * Execute a skill review on a single file
  */
-async function executeSkill(skill, file, diff, client, // AnthropicLike
-options) {
+async function executeSkill(skill, file, diff, client, options) {
     const startTime = Date.now();
     // Build skill-specific prompt
     const systemPrompt = skill.systemPrompt;
@@ -623,16 +622,22 @@ function parseSkillResponse(text, file, skill) {
         return { findings: [] };
     }
     const mapFindings = (parsed) => {
-        const findings = (parsed.findings || []).map((f) => ({
-            severity: f.severity || 'info',
-            category: f.category || skill.categories[0],
-            title: f.title || 'Untitled',
-            description: f.description || '',
-            file: file,
-            diffLines: f.diffLines,
-            suggestion: f.suggestion,
-            confidence: f.confidence,
-        }));
+        const findings = (parsed.findings || []).map((f) => {
+            const severity = f.severity || 'info';
+            const validSeverity = ['critical', 'high', 'medium', 'low', 'info'].includes(severity)
+                ? severity
+                : 'info';
+            return {
+                severity: validSeverity,
+                category: f.category || skill.categories[0],
+                title: f.title || 'Untitled',
+                description: f.description || '',
+                file: file,
+                diffLines: f.diffLines,
+                suggestion: f.suggestion,
+                confidence: f.confidence,
+            };
+        });
         return { findings, reasoning: parsed.reasoning };
     };
     try {
