@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "ad-ai-pr-reviewer",
   "name": "AI PR Reviewer",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "publisher": "subzone",
   "public": true,
   "targets": [
