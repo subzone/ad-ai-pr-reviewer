@@ -1,4 +1,4 @@
-import { recoverTruncatedFindingsJson } from '../../ai/skills';
+import { recoverTruncatedFindingsJson, isDiffLinesAllComments } from '../../ai/skills';
 
 describe('recoverTruncatedFindingsJson', () => {
   it('returns null for an empty string', () => {
@@ -61,5 +61,57 @@ describe('recoverTruncatedFindingsJson', () => {
     expect(result).not.toBeNull();
     const parsed = JSON.parse(result!);
     expect(parsed.findings).toHaveLength(5);
+  });
+});
+
+describe('isDiffLinesAllComments', () => {
+  it('returns false for an empty string', () => {
+    expect(isDiffLinesAllComments('')).toBe(false);
+  });
+
+  it('returns false for a normal code line', () => {
+    expect(isDiffLinesAllComments('+const x = 1;')).toBe(false);
+  });
+
+  it('returns true for a JS single-line comment', () => {
+    expect(isDiffLinesAllComments('+// this is commented out')).toBe(true);
+  });
+
+  it('returns true for a shell/Python/YAML comment', () => {
+    expect(isDiffLinesAllComments('+# commented line')).toBe(true);
+  });
+
+  it('returns true for a block comment start', () => {
+    expect(isDiffLinesAllComments('+/* begin block')).toBe(true);
+  });
+
+  it('returns true for a block comment continuation', () => {
+    expect(isDiffLinesAllComments('+* middle of block')).toBe(true);
+  });
+
+  it('returns true for a block comment end', () => {
+    expect(isDiffLinesAllComments('+*/')).toBe(true);
+  });
+
+  it('returns true for an HTML comment', () => {
+    expect(isDiffLinesAllComments('+<!-- html comment -->')).toBe(true);
+  });
+
+  it('returns true when all multi-line diffLines are comments', () => {
+    const multiLine = '+// first comment\n+// second comment';
+    expect(isDiffLinesAllComments(multiLine)).toBe(true);
+  });
+
+  it('returns false when mixed comment and code lines', () => {
+    const mixed = '+// comment\n+const x = 1;';
+    expect(isDiffLinesAllComments(mixed)).toBe(false);
+  });
+
+  it('strips diff prefix before checking (- lines)', () => {
+    expect(isDiffLinesAllComments('-// removed comment')).toBe(true);
+  });
+
+  it('strips diff prefix before checking (context lines with space)', () => {
+    expect(isDiffLinesAllComments(' // context comment')).toBe(true);
   });
 });
