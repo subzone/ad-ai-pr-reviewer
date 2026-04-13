@@ -780,6 +780,19 @@ function extractTextFromMessage(message: Anthropic.Message): string {
 }
 
 /**
+ * Normalize and validate a severity string from model output.
+ * Trims whitespace, converts to lowercase, and validates against allowed severities.
+ * Returns 'info' if the severity is invalid.
+ */
+export function normalizeSeverity(severity: string | undefined): SkillFinding['severity'] {
+  const normalizedSeverity = (severity || 'info').trim().toLowerCase();
+  const validSeverities: SkillFinding['severity'][] = ['critical', 'high', 'medium', 'low', 'info'];
+  return validSeverities.includes(normalizedSeverity as SkillFinding['severity'])
+    ? normalizedSeverity as SkillFinding['severity']
+    : 'info';
+}
+
+/**
  * Interface for parsed JSON response from skills
  */
 interface ParsedSkillResponse {
@@ -810,24 +823,16 @@ function parseSkillResponse(text: string, file: string, skill: ReviewSkill): {
   }
 
   const mapFindings = (parsed: ParsedSkillResponse): { findings: SkillFinding[]; reasoning?: string[] } => {
-    const findings: SkillFinding[] = (parsed.findings || []).map((f) => {
-      const severity = f.severity || 'info';
-      const validSeverity: SkillFinding['severity'] =
-        ['critical', 'high', 'medium', 'low', 'info'].includes(severity)
-          ? severity as SkillFinding['severity']
-          : 'info';
-
-      return {
-        severity: validSeverity,
-        category: f.category || skill.categories[0],
-        title: f.title || 'Untitled',
-        description: f.description || '',
-        file: file,
-        diffLines: f.diffLines,
-        suggestion: f.suggestion,
-        confidence: f.confidence,
-      };
-    });
+    const findings: SkillFinding[] = (parsed.findings || []).map((f) => ({
+      severity: normalizeSeverity(f.severity),
+      category: f.category || skill.categories[0],
+      title: f.title || 'Untitled',
+      description: f.description || '',
+      file: file,
+      diffLines: f.diffLines,
+      suggestion: f.suggestion,
+      confidence: f.confidence,
+    }));
     return { findings, reasoning: parsed.reasoning };
   };
 

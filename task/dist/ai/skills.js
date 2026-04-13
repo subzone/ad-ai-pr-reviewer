@@ -6,6 +6,7 @@ exports.getSkillById = getSkillById;
 exports.listAvailableSkills = listAvailableSkills;
 exports.parseSkillIds = parseSkillIds;
 exports.executeSkill = executeSkill;
+exports.normalizeSeverity = normalizeSeverity;
 exports.isDiffLinesAllComments = isDiffLinesAllComments;
 exports.recoverTruncatedFindingsJson = recoverTruncatedFindingsJson;
 exports.executeSkillsParallel = executeSkillsParallel;
@@ -612,6 +613,18 @@ function extractTextFromMessage(message) {
     return '';
 }
 /**
+ * Normalize and validate a severity string from model output.
+ * Trims whitespace, converts to lowercase, and validates against allowed severities.
+ * Returns 'info' if the severity is invalid.
+ */
+function normalizeSeverity(severity) {
+    const normalizedSeverity = (severity || 'info').trim().toLowerCase();
+    const validSeverities = ['critical', 'high', 'medium', 'low', 'info'];
+    return validSeverities.includes(normalizedSeverity)
+        ? normalizedSeverity
+        : 'info';
+}
+/**
  * Parse skill response
  */
 function parseSkillResponse(text, file, skill) {
@@ -622,22 +635,16 @@ function parseSkillResponse(text, file, skill) {
         return { findings: [] };
     }
     const mapFindings = (parsed) => {
-        const findings = (parsed.findings || []).map((f) => {
-            const severity = f.severity || 'info';
-            const validSeverity = ['critical', 'high', 'medium', 'low', 'info'].includes(severity)
-                ? severity
-                : 'info';
-            return {
-                severity: validSeverity,
-                category: f.category || skill.categories[0],
-                title: f.title || 'Untitled',
-                description: f.description || '',
-                file: file,
-                diffLines: f.diffLines,
-                suggestion: f.suggestion,
-                confidence: f.confidence,
-            };
-        });
+        const findings = (parsed.findings || []).map((f) => ({
+            severity: normalizeSeverity(f.severity),
+            category: f.category || skill.categories[0],
+            title: f.title || 'Untitled',
+            description: f.description || '',
+            file: file,
+            diffLines: f.diffLines,
+            suggestion: f.suggestion,
+            confidence: f.confidence,
+        }));
         return { findings, reasoning: parsed.reasoning };
     };
     try {
