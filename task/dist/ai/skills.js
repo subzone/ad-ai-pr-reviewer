@@ -6,6 +6,7 @@ exports.getSkillById = getSkillById;
 exports.listAvailableSkills = listAvailableSkills;
 exports.parseSkillIds = parseSkillIds;
 exports.executeSkill = executeSkill;
+exports.recoverTruncatedFindingsJson = recoverTruncatedFindingsJson;
 exports.executeSkillsParallel = executeSkillsParallel;
 exports.mergeSkillResults = mergeSkillResults;
 const utils_1 = require("./utils");
@@ -350,7 +351,7 @@ OUTPUT: Structured JSON.`,
         confidenceThreshold: 0.75,
         maxFindingsPerFile: 8,
         tools: ['read_full_file', 'search_codebase'],
-        maxTokens: 2048,
+        maxTokens: 4096,
         estimatedTokensPerFile: 700,
     },
     accessibility: {
@@ -618,8 +619,7 @@ function parseSkillResponse(text, file, skill) {
         console.warn(`Skill ${skill.name} returned non-JSON response`);
         return { findings: [] };
     }
-    try {
-        const parsed = JSON.parse(jsonMatch[0]);
+    const mapFindings = (parsed) => {
         const findings = (parsed.findings || []).map((f) => ({
             severity: f.severity || 'info',
             category: f.category || skill.categories[0],
@@ -630,15 +630,51 @@ function parseSkillResponse(text, file, skill) {
             suggestion: f.suggestion,
             confidence: f.confidence,
         }));
-        return {
-            findings,
-            reasoning: parsed.reasoning,
-        };
+        return { findings, reasoning: parsed.reasoning };
+    };
+    try {
+        return mapFindings(JSON.parse(jsonMatch[0]));
     }
     catch (err) {
+        // Response may be truncated — try to recover by closing at the last complete finding object
+        const recovered = recoverTruncatedFindingsJson(jsonMatch[0]);
+        if (recovered !== null) {
+            try {
+                const result = mapFindings(JSON.parse(recovered));
+                console.warn(`Skill ${skill.name} response was truncated — recovered ${result.findings.length} finding(s)`);
+                return result;
+            }
+            catch {
+                // recovery parse also failed — fall through
+            }
+        }
         console.warn(`Failed to parse skill ${skill.name} response:`, err);
         return { findings: [] };
     }
+}
+/**
+ * Attempt to recover a truncated JSON findings object by closing it at the last complete item.
+ */
+function recoverTruncatedFindingsJson(json) {
+    let pos = json.length - 1;
+    while (pos >= 0) {
+        pos = json.lastIndexOf('}', pos);
+        if (pos === -1)
+            break;
+        // Try closing the array and outer object after this }
+        for (const suffix of [']}', ']}}', '}']) {
+            try {
+                const candidate = json.substring(0, pos + 1) + suffix;
+                JSON.parse(candidate);
+                return candidate;
+            }
+            catch {
+                // try next suffix
+            }
+        }
+        pos--;
+    }
+    return null;
 }
 /**
  * Validate skill findings and filter low-quality ones

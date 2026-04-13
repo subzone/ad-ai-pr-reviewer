@@ -1,3 +1,5 @@
+import { extractLineNumber, isOpenAiModel, normalizeAzureEndpoint } from '../../ai/reviewer';
+
 describe('AI Reviewer Utilities', () => {
   describe('truncateDiff', () => {
     it('should return diff unchanged if under max lines', () => {
@@ -230,10 +232,95 @@ The implementation in \`lib/helper.js\` needs review.`;
 
       const backtickMatches = Array.from(review.matchAll(/`([a-zA-Z0-9_\-./]+\.[a-zA-Z0-9]+)`/g));
       const files = backtickMatches.map(m => m[1]);
-      
+
       expect(files).toContain('src/index.ts');
       expect(files).toContain('src/utils.ts');
       expect(files).toContain('lib/helper.js');
     });
+  });
+});
+
+describe('isOpenAiModel', () => {
+  it.each([
+    ['gpt-4o', true],
+    ['gpt-4o-mini', true],
+    ['gpt-4', true],
+    ['gpt-35-turbo', true],
+    ['GPT-4O', true],           // case-insensitive
+    ['o1', true],
+    ['o1-preview', true],
+    ['o3', true],
+    ['o3-mini', true],
+    ['o4-mini', true],
+    ['claude-sonnet-4-6', false],
+    ['claude-opus-4-6', false],
+    ['claude-haiku-4-5-20251001', false],
+    ['gemini-pro', false],
+    ['', false],
+  ])('%s → %s', (model, expected) => {
+    expect(isOpenAiModel(model)).toBe(expected);
+  });
+});
+
+describe('normalizeAzureEndpoint', () => {
+  it.each([
+    ['https://myresource.openai.azure.com',         'https://myresource.openai.azure.com'],
+    ['https://myresource.openai.azure.com/',        'https://myresource.openai.azure.com/'],
+    ['https://myresource.openai.azure.com/openai',  'https://myresource.openai.azure.com'],
+    ['https://myresource.openai.azure.com/openai/', 'https://myresource.openai.azure.com'],
+    ['https://myapim.azure-api.net/openai',         'https://myapim.azure-api.net'],
+    ['https://myapim.azure-api.net',                'https://myapim.azure-api.net'],
+    // Deep paths are left untouched — user should not pass full deployment URLs
+    ['https://myresource.openai.azure.com/openai/deployments/gpt-4o',
+     'https://myresource.openai.azure.com/openai/deployments/gpt-4o'],
+    // AI Foundry URL is left untouched (used by the Anthropic client, not the OpenAI client)
+    ['https://myresource.services.ai.azure.com/models',
+     'https://myresource.services.ai.azure.com/models'],
+  ])('%s → %s', (input, expected) => {
+    expect(normalizeAzureEndpoint(input)).toBe(expected);
+  });
+});
+
+describe('extractLineNumber — multi-line diffLines', () => {
+  const diff = `--- a/modules/linux_vm/vars.tf
++++ b/modules/linux_vm/vars.tf
+@@ -1,5 +1,10 @@
+ variable "vm_name" {
+   type = string
+ }
++variable "enable_auto_update" {
++  type        = bool
++  default     = true
++}
++variable "patch_schedule_start_datetime" {
++  type        = string
++}`;
+
+  it('finds line when diffLines is a single added line', () => {
+    const line = extractLineNumber(diff, 'modules/linux_vm/vars.tf', '+variable "enable_auto_update" {');
+    expect(line).not.toBeNull();
+    expect(line).toBe(4);
+  });
+
+  it('finds line when diffLines is multi-line (uses first line only)', () => {
+    const multiLine = '+variable "enable_auto_update" {\n+  type        = bool';
+    const line = extractLineNumber(diff, 'modules/linux_vm/vars.tf', multiLine);
+    expect(line).not.toBeNull();
+    expect(line).toBe(4);
+  });
+
+  it('finds line when diffLines contains leading + on first line', () => {
+    const multiLine = '+variable "patch_schedule_start_datetime" {\n+  type        = string';
+    const line = extractLineNumber(diff, 'modules/linux_vm/vars.tf', multiLine);
+    expect(line).not.toBeNull();
+    expect(line).toBe(8);
+  });
+
+  it('returns null for a file not in the diff', () => {
+    expect(extractLineNumber(diff, 'other/file.tf', '+variable "enable_auto_update" {')).toBeNull();
+  });
+
+  it('returns null when none of the lines match', () => {
+    expect(extractLineNumber(diff, 'modules/linux_vm/vars.tf', '+variable "nonexistent" {')).toBeNull();
   });
 });

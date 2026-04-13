@@ -36,6 +36,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.isOpenAiModel = isOpenAiModel;
+exports.normalizeAzureEndpoint = normalizeAzureEndpoint;
 exports.extractLineNumber = extractLineNumber;
 exports.convertFindingsToComments = convertFindingsToComments;
 exports.reviewPullRequest = reviewPullRequest;
@@ -43,19 +45,167 @@ exports.splitDiffByFile = splitDiffByFile;
 const sdk_1 = __importDefault(require("@anthropic-ai/sdk"));
 const bedrock_sdk_1 = __importDefault(require("@anthropic-ai/bedrock-sdk"));
 const vertex_sdk_1 = __importDefault(require("@anthropic-ai/vertex-sdk"));
+const openai_1 = require("openai");
 const utils_1 = require("./utils");
+// ── Azure Smart Adapter ────────────────────────────────────────────────────────
+/** Returns true if the model is an Azure OpenAI model (GPT / O-series). */
+function isOpenAiModel(model) {
+    const lc = model.toLowerCase();
+    return lc.startsWith('gpt-') || lc.startsWith('o1') || lc.startsWith('o3') || lc.startsWith('o4');
+}
+/**
+ * Normalizes an Azure endpoint URL for use with the AzureOpenAI SDK.
+ * Strips a trailing /openai or /openai/ suffix that users sometimes copy from the Azure portal,
+ * since the SDK appends /openai/deployments/{model}/... itself.
+ */
+function normalizeAzureEndpoint(baseUrl) {
+    return baseUrl.replace(/\/openai\/?$/, '');
+}
+/**
+ * Adapter that wraps both the Anthropic SDK and the Azure OpenAI SDK behind the
+ * common AnthropicLike interface.  It inspects `params.model` on every call and
+ * routes accordingly:
+ *   - Claude models  → Azure AI Foundry  (Anthropic Messages API format)
+ *   - GPT / O-series → Azure OpenAI Service (OpenAI Chat Completions format)
+ *
+ * The Azure OpenAI baseUrl should be the resource endpoint, e.g.
+ *   https://<resource>.openai.azure.com
+ * or an APIM gateway URL that routes to Azure OpenAI.
+ */
+class AzureSmartAdapter {
+    constructor(apiKey, baseUrl) {
+        this.messages = {
+            create: async (params) => {
+                if (isOpenAiModel(params.model)) {
+                    return this.callOpenAI(params);
+                }
+                return this.anthropicClient.messages.create(params);
+            },
+        };
+        // Anthropic-compatible path (Azure AI Foundry / Claude deployments)
+        this.anthropicClient = new sdk_1.default({
+            apiKey,
+            baseURL: baseUrl,
+            defaultHeaders: { 'api-key': apiKey },
+        });
+        // OpenAI-compatible path (Azure OpenAI Service / GPT deployments)
+        // Strip trailing /openai if present to avoid double-prefix when AzureOpenAI
+        // constructs the full path: {endpoint}/openai/deployments/{model}/...
+        const endpoint = normalizeAzureEndpoint(baseUrl);
+        this.openaiClient = new openai_1.AzureOpenAI({
+            apiKey,
+            endpoint,
+            apiVersion: '2024-10-01-preview',
+        });
+    }
+    async callOpenAI(params) {
+        const oaiMessages = [];
+        // System prompt
+        if (params.system) {
+            const text = typeof params.system === 'string'
+                ? params.system
+                : params.system.map(b => b.text).join('\n');
+            oaiMessages.push({ role: 'system', content: text });
+        }
+        // Conversation history
+        for (const msg of params.messages) {
+            if (msg.role === 'user') {
+                if (typeof msg.content === 'string') {
+                    oaiMessages.push({ role: 'user', content: msg.content });
+                }
+                else {
+                    const blocks = msg.content;
+                    const toolResults = blocks.filter(b => b.type === 'tool_result');
+                    const textBlocks = blocks.filter(b => b.type === 'text');
+                    if (toolResults.length > 0) {
+                        for (const tr of toolResults) {
+                            const content = typeof tr.content === 'string'
+                                ? tr.content
+                                : (tr.content ?? []).map(b => b.text).join('\n');
+                            oaiMessages.push({ role: 'tool', tool_call_id: tr.tool_use_id, content });
+                        }
+                    }
+                    if (textBlocks.length > 0) {
+                        oaiMessages.push({ role: 'user', content: textBlocks.map(b => b.text).join('\n') });
+                    }
+                }
+            }
+            else if (msg.role === 'assistant') {
+                if (typeof msg.content === 'string') {
+                    oaiMessages.push({ role: 'assistant', content: msg.content });
+                }
+                else {
+                    const blocks = msg.content;
+                    const textBlocks = blocks.filter(b => b.type === 'text');
+                    const toolUse = blocks.filter(b => b.type === 'tool_use');
+                    const tool_calls = toolUse.map(b => ({
+                        id: b.id,
+                        type: 'function',
+                        function: { name: b.name, arguments: JSON.stringify(b.input) },
+                    }));
+                    oaiMessages.push({
+                        role: 'assistant',
+                        content: textBlocks.length > 0 ? textBlocks.map(b => b.text).join('\n') : null,
+                        ...(tool_calls.length > 0 ? { tool_calls } : {}),
+                    });
+                }
+            }
+        }
+        // Tools
+        const oaiTools = params.tools
+            ? params.tools.map(t => ({
+                type: 'function',
+                function: { name: t.name, description: t.description, parameters: t.input_schema },
+            }))
+            : undefined;
+        const response = await (0, utils_1.callWithRetry)(() => this.openaiClient.chat.completions.create({
+            model: params.model,
+            messages: oaiMessages,
+            max_tokens: params.max_tokens,
+            ...(oaiTools ? { tools: oaiTools } : {}),
+            stream: false,
+        }));
+        const choice = response.choices[0];
+        const content = [];
+        if (choice.message.content) {
+            content.push({ type: 'text', text: choice.message.content });
+        }
+        for (const tc of (choice.message.tool_calls ?? []).filter(t => t.type === 'function')) {
+            let input = {};
+            try {
+                input = JSON.parse(tc.function.arguments ?? '{}');
+            }
+            catch { /* ignore */ }
+            content.push({ type: 'tool_use', id: tc.id, name: tc.function.name, input });
+        }
+        let stop_reason = 'end_turn';
+        if (choice.finish_reason === 'tool_calls')
+            stop_reason = 'tool_use';
+        else if (choice.finish_reason === 'length')
+            stop_reason = 'max_tokens';
+        return {
+            id: response.id,
+            type: 'message',
+            role: 'assistant',
+            model: params.model,
+            content,
+            stop_reason,
+            stop_sequence: null,
+            usage: {
+                input_tokens: response.usage?.prompt_tokens ?? 0,
+                output_tokens: response.usage?.completion_tokens ?? 0,
+            },
+        };
+    }
+}
 function buildAiClient(config) {
     switch (config.provider) {
         case 'anthropic':
             return new sdk_1.default({ apiKey: config.apiKey });
         case 'azure':
-            // Azure AI Foundry exposes Claude via an Anthropic-compatible endpoint.
-            // Auth uses the deployment API key passed as both the SDK apiKey and x-api-key header.
-            return new sdk_1.default({
-                apiKey: config.apiKey,
-                baseURL: config.baseUrl,
-                defaultHeaders: { 'api-key': config.apiKey },
-            });
+            // AzureSmartAdapter routes Claude models to Azure AI Foundry (Anthropic-compatible)
+            // and GPT/O-series models to Azure OpenAI Service (OpenAI-compatible).
+            return new AzureSmartAdapter(config.apiKey, config.baseUrl);
         case 'litellm':
             // LiteLLM proxy implements the Anthropic Messages API.
             // apiKey may be a proxy-level key or empty depending on proxy config.
@@ -298,8 +448,10 @@ function extractLineNumber(diff, file, diffLineText) {
     let currentFile = '';
     let newLineNumber = 0;
     let inCorrectFile = false;
+    // When diffLines spans multiple lines, use only the first non-empty line for matching
+    const firstLine = diffLineText.split('\n').find(l => l.trim().length > 0) ?? diffLineText;
     // Normalize the search text (remove leading +/- and trim)
-    const searchText = diffLineText.replace(/^[+\- ]/, '').trim();
+    const searchText = firstLine.replace(/^[+\- ]/, '').trim();
     // When a - line matches, record it and try to return the next + or context line instead
     let deletedLineMatch = false;
     for (const line of lines) {

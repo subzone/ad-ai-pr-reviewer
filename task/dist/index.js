@@ -316,9 +316,9 @@ function buildAiProviderConfig() {
             const apiKey = tl.getInput('aiApiKey', false) ?? '';
             const baseUrl = tl.getInput('aiBaseUrl', false) ?? '';
             if (!apiKey)
-                throw new Error('aiApiKey is required when using Azure AI Foundry.');
+                throw new Error('aiApiKey is required when using Azure (Azure OpenAI or Azure AI Foundry).');
             if (!baseUrl)
-                throw new Error('aiBaseUrl is required when using Azure AI Foundry (e.g. https://<resource>.services.ai.azure.com/models).');
+                throw new Error('aiBaseUrl is required when using Azure. For Azure OpenAI use your resource endpoint (e.g. https://<resource>.openai.azure.com). For Azure AI Foundry use the models endpoint (e.g. https://<resource>.services.ai.azure.com/models).');
             return { provider: 'azure', apiKey, baseUrl };
         }
         case 'litellm': {

@@ -287,6 +287,20 @@ aiBaseUrl: $(AZURE_AI_ENDPOINT)   # https://<resource>.services.ai.azure.com/mod
 aiModel: claude-sonnet-4-6       # deployment name
 ```
 
+### Azure OpenAI Service
+
+Find your endpoint and key in **Azure Portal → your OpenAI resource → Keys and Endpoint**.
+
+The model name must match your deployment name in Azure OpenAI Studio. GPT and O-series model names (`gpt-4o`, `o1`, etc.) are automatically detected and routed to Azure OpenAI; Claude model names continue to use Azure AI Foundry.
+
+```yaml
+enableAiReview: true
+aiProvider: azure
+aiApiKey: $(AZURE_OPENAI_API_KEY)
+aiBaseUrl: $(AZURE_OPENAI_ENDPOINT)  # https://<resource>.openai.azure.com
+aiModel: gpt-4o                      # must match your deployment name
+```
+
 ### AWS Bedrock
 
 Enable the model in **AWS Console → Bedrock → Model access** first. On ADO-hosted agents without an IAM role, pass keys explicitly.

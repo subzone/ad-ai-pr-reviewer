@@ -445,7 +445,7 @@ OUTPUT: Structured JSON.`,
     confidenceThreshold: 0.75,
     maxFindingsPerFile: 8,
     tools: ['read_full_file', 'search_codebase'],
-    maxTokens: 2048,
+    maxTokens: 4096,
     estimatedTokensPerFile: 700,
   },
 
@@ -784,10 +784,8 @@ function parseSkillResponse(text: string, file: string, skill: ReviewSkill): {
     console.warn(`Skill ${skill.name} returned non-JSON response`);
     return { findings: [] };
   }
-  
-  try {
-    const parsed = JSON.parse(jsonMatch[0]);
-    
+
+  const mapFindings = (parsed: any): { findings: SkillFinding[]; reasoning?: string[] } => {
     const findings: SkillFinding[] = (parsed.findings || []).map((f: any) => ({
       severity: f.severity || 'info',
       category: f.category || skill.categories[0],
@@ -798,15 +796,50 @@ function parseSkillResponse(text: string, file: string, skill: ReviewSkill): {
       suggestion: f.suggestion,
       confidence: f.confidence,
     }));
-    
-    return {
-      findings,
-      reasoning: parsed.reasoning,
-    };
+    return { findings, reasoning: parsed.reasoning };
+  };
+
+  try {
+    return mapFindings(JSON.parse(jsonMatch[0]));
   } catch (err) {
+    // Response may be truncated — try to recover by closing at the last complete finding object
+    const recovered = recoverTruncatedFindingsJson(jsonMatch[0]);
+    if (recovered !== null) {
+      try {
+        const result = mapFindings(JSON.parse(recovered));
+        console.warn(`Skill ${skill.name} response was truncated — recovered ${result.findings.length} finding(s)`);
+        return result;
+      } catch {
+        // recovery parse also failed — fall through
+      }
+    }
     console.warn(`Failed to parse skill ${skill.name} response:`, err);
     return { findings: [] };
   }
+}
+
+/**
+ * Attempt to recover a truncated JSON findings object by closing it at the last complete item.
+ */
+export function recoverTruncatedFindingsJson(json: string): string | null {
+  let pos = json.length - 1;
+  while (pos >= 0) {
+    pos = json.lastIndexOf('}', pos);
+    if (pos === -1) break;
+
+    // Try closing the array and outer object after this }
+    for (const suffix of [']}', ']}}', '}']) {
+      try {
+        const candidate = json.substring(0, pos + 1) + suffix;
+        JSON.parse(candidate);
+        return candidate;
+      } catch {
+        // try next suffix
+      }
+    }
+    pos--;
+  }
+  return null;
 }
 
 /**
