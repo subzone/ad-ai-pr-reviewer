@@ -256,15 +256,17 @@ Set after `reviewPR` or `createPR`:
 
 ## AI providers
 
-Use `aiProvider` to choose where the model runs. All providers host Claude models.
+Use `aiProvider` to choose where the model runs.
 
-| `aiProvider` | Auth inputs needed |
-|---|---|
-| `anthropic` (default) | `aiApiKey` |
-| `azure` | `aiApiKey`, `aiBaseUrl` |
-| `litellm` | `aiBaseUrl`, `aiApiKey` (optional) |
-| `bedrock` | `awsRegion` + optionally `awsAccessKeyId` / `awsSecretAccessKey` |
-| `vertex` | `gcpProjectId`, `gcpRegion`, GCP ADC credentials |
+| `aiProvider` | Models | Auth inputs needed |
+|---|---|---|
+| `anthropic` (default) | Claude | `aiApiKey` |
+| `azure` | Claude (AI Foundry) or GPT/O-series (OpenAI) | `aiApiKey`, `aiBaseUrl` |
+| `litellm` | Any (proxy-routed) | `aiBaseUrl`, `aiApiKey` (optional) |
+| `bedrock` | Claude | `awsRegion` + optionally `awsAccessKeyId` / `awsSecretAccessKey` |
+| `vertex` | Claude | `gcpProjectId`, `gcpRegion`, GCP ADC credentials |
+| `googleai` | Gemini | `aiApiKey` |
+| `githubmodels` | GPT, Llama, Mistral, and others | `aiApiKey` (GitHub PAT) |
 
 ### Anthropic (default)
 
@@ -338,6 +340,28 @@ aiProvider: litellm
 aiBaseUrl: http://litellm.internal:4000
 aiApiKey: $(LITELLM_API_KEY)   # optional — depends on your proxy config
 aiModel: claude-sonnet-4-6
+```
+
+### Google AI Studio
+
+Get an API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey). No endpoint URL needed — it's fixed.
+
+```yaml
+enableAiReview: true
+aiProvider: googleai
+aiApiKey: $(GOOGLE_AI_STUDIO_KEY)
+aiModel: gemini-2.0-flash   # or gemini-1.5-pro, gemini-2.5-pro-preview-03-25
+```
+
+### GitHub Models
+
+Create a GitHub Personal Access Token with the `models:read` permission. Browse available models at [github.com/marketplace/models](https://github.com/marketplace/models). No endpoint URL needed — it's fixed.
+
+```yaml
+enableAiReview: true
+aiProvider: githubmodels
+aiApiKey: $(GITHUB_PAT)
+aiModel: gpt-4o   # or gpt-4o-mini, Meta-Llama-3.1-405B-Instruct, etc.
 ```
 
 ---
