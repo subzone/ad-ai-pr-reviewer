@@ -392,7 +392,7 @@ async function runAiReview(params: AiReviewParams): Promise<void> {
 
 function buildAiProviderConfig(): AiProviderConfig {
   const aiProvider = (tl.getInput('aiProvider', false) ?? 'anthropic') as
-    | 'anthropic' | 'azure' | 'litellm' | 'bedrock' | 'vertex';
+    | 'anthropic' | 'azure' | 'litellm' | 'bedrock' | 'vertex' | 'googleai' | 'githubmodels';
 
   switch (aiProvider) {
     case 'anthropic': {
@@ -433,6 +433,18 @@ function buildAiProviderConfig(): AiProviderConfig {
       if (!projectId) throw new Error('gcpProjectId is required when using Google Vertex AI.');
       if (!region)    throw new Error('gcpRegion is required when using Google Vertex AI (e.g. us-east5).');
       return { provider: 'vertex', projectId, region };
+    }
+
+    case 'googleai': {
+      const apiKey = tl.getInput('aiApiKey', false) ?? '';
+      if (!apiKey) throw new Error('aiApiKey is required when using Google AI Studio. Get your API key from https://aistudio.google.com/apikey.');
+      return { provider: 'googleai', apiKey };
+    }
+
+    case 'githubmodels': {
+      const apiKey = tl.getInput('aiApiKey', false) ?? '';
+      if (!apiKey) throw new Error('aiApiKey is required when using GitHub Models. Use a GitHub Personal Access Token with the models:read permission.');
+      return { provider: 'githubmodels', apiKey };
     }
 
     default:

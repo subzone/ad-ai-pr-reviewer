@@ -7,11 +7,13 @@ import { callWithRetry } from './utils';
 // ── Provider configuration ─────────────────────────────────────────────────────
 
 export type AiProviderConfig =
-  | { provider: 'anthropic'; apiKey: string }
-  | { provider: 'azure';     apiKey: string; baseUrl: string }
-  | { provider: 'litellm';   apiKey: string; baseUrl: string }
-  | { provider: 'bedrock';   accessKeyId?: string; secretAccessKey?: string; region: string }
-  | { provider: 'vertex';    projectId: string; region: string };
+  | { provider: 'anthropic';    apiKey: string }
+  | { provider: 'azure';        apiKey: string; baseUrl: string }
+  | { provider: 'litellm';      apiKey: string; baseUrl: string }
+  | { provider: 'bedrock';      accessKeyId?: string; secretAccessKey?: string; region: string }
+  | { provider: 'vertex';       projectId: string; region: string }
+  | { provider: 'googleai';     apiKey: string }
+  | { provider: 'githubmodels'; apiKey: string };
 
 // Minimal duck-typed interface satisfied by Anthropic, AnthropicBedrock, and AnthropicVertex
 type AnthropicLike = {
@@ -81,6 +83,20 @@ class AzureSmartAdapter {
   };
 
   private async callOpenAI(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message> {
+    return callOpenAICompatible(this.openaiClient, params);
+  }
+}
+
+// ── Shared OpenAI-compatible translation ───────────────────────────────────────
+
+/**
+ * Translates an Anthropic-format request to OpenAI Chat Completions and back.
+ * Works with any OpenAI-compatible endpoint (AzureOpenAI is a subclass of OpenAI).
+ */
+async function callOpenAICompatible(
+  client: OpenAI,
+  params: Anthropic.MessageCreateParamsNonStreaming
+): Promise<Anthropic.Message> {
     const oaiMessages: OpenAI.ChatCompletionMessageParam[] = [];
 
     // System prompt
@@ -145,7 +161,7 @@ class AzureSmartAdapter {
       : undefined;
 
     const response = await callWithRetry<OpenAI.ChatCompletion>(() =>
-      this.openaiClient.chat.completions.create({
+      client.chat.completions.create({
         model: params.model,
         messages: oaiMessages,
         max_tokens: params.max_tokens,
@@ -184,7 +200,26 @@ class AzureSmartAdapter {
         output_tokens: response.usage?.completion_tokens ?? 0,
       },
     } as Anthropic.Message;
+}
+
+// ── OpenAI-compatible adapter ──────────────────────────────────────────────────
+
+/**
+ * Adapter for any OpenAI-compatible endpoint (Google AI Studio, GitHub Models, etc.).
+ * Uses a plain OpenAI client with a custom baseURL and translates to/from the
+ * Anthropic Messages API format used by the rest of the codebase.
+ */
+class OpenAICompatibleAdapter {
+  private readonly client: OpenAI;
+
+  constructor(apiKey: string, baseURL: string) {
+    this.client = new OpenAI({ apiKey, baseURL });
   }
+
+  readonly messages = {
+    create: (params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message> =>
+      callOpenAICompatible(this.client, params),
+  };
 }
 
 function buildAiClient(config: AiProviderConfig): AnthropicLike {
@@ -224,6 +259,21 @@ function buildAiClient(config: AiProviderConfig): AnthropicLike {
         projectId: config.projectId,
         region:    config.region,
       }) as unknown as AnthropicLike;
+
+    case 'googleai':
+      // Google AI Studio — OpenAI-compatible endpoint for Gemini models.
+      return new OpenAICompatibleAdapter(
+        config.apiKey,
+        'https://generativelanguage.googleapis.com/v1beta/openai/'
+      );
+
+    case 'githubmodels':
+      // GitHub Models marketplace — OpenAI-compatible endpoint, API key is a GitHub PAT
+      // with the models:read permission.
+      return new OpenAICompatibleAdapter(
+        config.apiKey,
+        'https://models.inference.ai.azure.com'
+      );
   }
 }
 

@@ -256,6 +256,9 @@ describe('isOpenAiModel', () => {
     ['claude-opus-4-6', false],
     ['claude-haiku-4-5-20251001', false],
     ['gemini-pro', false],
+    ['gemini-2.0-flash', false],           // Google AI Studio
+    ['gemini-1.5-pro', false],             // Google AI Studio
+    ['Meta-Llama-3.1-405B-Instruct', false], // GitHub Models
     ['', false],
   ])('%s → %s', (model, expected) => {
     expect(isOpenAiModel(model)).toBe(expected);

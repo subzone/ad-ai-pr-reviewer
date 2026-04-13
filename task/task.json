@@ -176,11 +176,13 @@
       "groupName": "ai",
       "helpMarkDown": "The AI hosting service to use for reviews.",
       "options": {
-        "anthropic": "Anthropic (direct API)",
-        "azure":     "Azure (OpenAI & AI Foundry)",
-        "litellm":   "LiteLLM (self-hosted proxy)",
-        "bedrock":   "AWS Bedrock",
-        "vertex":    "Google Vertex AI"
+        "anthropic":    "Anthropic (direct API)",
+        "azure":        "Azure (OpenAI & AI Foundry)",
+        "litellm":      "LiteLLM (self-hosted proxy)",
+        "bedrock":      "AWS Bedrock",
+        "vertex":       "Google Vertex AI",
+        "googleai":     "Google AI Studio",
+        "githubmodels": "GitHub Models"
       },
       "visibleRule": "enableAiReview = true"
     },
@@ -191,7 +193,7 @@
       "defaultValue": "",
       "required": false,
       "groupName": "ai",
-      "helpMarkDown": "API key for the selected AI provider. **Anthropic:** get from [console.anthropic.com](https://console.anthropic.com). **Azure OpenAI:** your resource API key (found in Azure Portal → your OpenAI resource → Keys and Endpoint). **Azure AI Foundry:** your deployment API key. **LiteLLM:** your proxy key (leave empty if your proxy requires no auth). Store as a secret pipeline variable.",
+      "helpMarkDown": "API key for the selected AI provider. **Anthropic:** get from [console.anthropic.com](https://console.anthropic.com). **Azure OpenAI:** your resource API key (found in Azure Portal → your OpenAI resource → Keys and Endpoint). **Azure AI Foundry:** your deployment API key. **LiteLLM:** your proxy key (leave empty if your proxy requires no auth). **Google AI Studio:** get from [aistudio.google.com/apikey](https://aistudio.google.com/apikey). **GitHub Models:** a GitHub Personal Access Token with the `models:read` permission. Store as a secret pipeline variable.",
       "visibleRule": "enableAiReview = true && aiProvider != bedrock && aiProvider != vertex"
     },
     {
@@ -202,7 +204,7 @@
       "required": false,
       "groupName": "ai",
       "helpMarkDown": "Base URL of the AI endpoint. **Azure OpenAI:** your resource endpoint, e.g. `https://<resource>.openai.azure.com` (found in Azure Portal → your OpenAI resource → Keys and Endpoint). **Azure AI Foundry:** `https://<resource>.services.ai.azure.com/models` (find in Azure AI Foundry → Project → Endpoints). **LiteLLM:** your proxy URL, e.g. `http://localhost:4000`. GPT and O-series models are auto-detected and routed to Azure OpenAI; Claude models use Azure AI Foundry.",
-      "visibleRule": "enableAiReview = true && aiProvider != anthropic && aiProvider != bedrock && aiProvider != vertex"
+      "visibleRule": "enableAiReview = true && aiProvider != anthropic && aiProvider != bedrock && aiProvider != vertex && aiProvider != googleai && aiProvider != githubmodels"
     },
     {
       "name": "aiModel",
@@ -211,7 +213,7 @@
       "defaultValue": "claude-sonnet-4-6",
       "required": false,
       "groupName": "ai",
-      "helpMarkDown": "Model identifier to use for review. **Anthropic / Vertex / LiteLLM:** `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5-20251001`. **AWS Bedrock:** `anthropic.claude-3-5-sonnet-20241022-v2:0`, `us.anthropic.claude-opus-4-5:0` (use cross-region inference prefix for newer models). **Azure OpenAI:** your deployment name, e.g. `gpt-4o`, `gpt-4o-mini`. **Azure AI Foundry:** your deployment name (Claude model).",
+      "helpMarkDown": "Model identifier to use for review. **Anthropic / Vertex / LiteLLM:** `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5-20251001`. **AWS Bedrock:** `anthropic.claude-3-5-sonnet-20241022-v2:0`, `us.anthropic.claude-opus-4-5:0` (use cross-region inference prefix for newer models). **Azure OpenAI:** your deployment name, e.g. `gpt-4o`, `gpt-4o-mini`. **Azure AI Foundry:** your deployment name (Claude model). **Google AI Studio:** `gemini-2.0-flash`, `gemini-1.5-pro`, `gemini-2.5-pro-preview-03-25`. **GitHub Models:** `gpt-4o`, `gpt-4o-mini`, `Meta-Llama-3.1-405B-Instruct`.",
       "visibleRule": "enableAiReview = true"
     },
     {
