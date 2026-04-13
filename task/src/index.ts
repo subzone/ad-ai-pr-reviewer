@@ -392,7 +392,7 @@ async function runAiReview(params: AiReviewParams): Promise<void> {
 
 function buildAiProviderConfig(): AiProviderConfig {
   const aiProvider = (tl.getInput('aiProvider', false) ?? 'anthropic') as
-    | 'anthropic' | 'azure' | 'litellm' | 'bedrock' | 'vertex' | 'googleai' | 'githubmodels';
+    | 'anthropic' | 'azure' | 'azure-openai' | 'litellm' | 'bedrock' | 'vertex' | 'googleai' | 'githubmodels';
 
   switch (aiProvider) {
     case 'anthropic': {
@@ -404,9 +404,17 @@ function buildAiProviderConfig(): AiProviderConfig {
     case 'azure': {
       const apiKey = tl.getInput('aiApiKey', false) ?? '';
       const baseUrl = tl.getInput('aiBaseUrl', false) ?? '';
-      if (!apiKey) throw new Error('aiApiKey is required when using Azure (Azure OpenAI or Azure AI Foundry).');
-      if (!baseUrl) throw new Error('aiBaseUrl is required when using Azure. For Azure OpenAI use your resource endpoint (e.g. https://<resource>.openai.azure.com). For Azure AI Foundry use the models endpoint (e.g. https://<resource>.services.ai.azure.com/models).');
+      if (!apiKey) throw new Error('aiApiKey is required when using Azure AI Foundry.');
+      if (!baseUrl) throw new Error('aiBaseUrl is required when using Azure AI Foundry. Use your models endpoint, e.g. https://<resource>.services.ai.azure.com/models.');
       return { provider: 'azure', apiKey, baseUrl };
+    }
+
+    case 'azure-openai': {
+      const apiKey = tl.getInput('aiApiKey', false) ?? '';
+      const baseUrl = tl.getInput('aiBaseUrl', false) ?? '';
+      if (!apiKey) throw new Error('aiApiKey is required when using Azure OpenAI Service.');
+      if (!baseUrl) throw new Error('aiBaseUrl is required when using Azure OpenAI Service. Use your resource endpoint, e.g. https://<resource>.openai.azure.com.');
+      return { provider: 'azure-openai', apiKey, baseUrl };
     }
 
     case 'litellm': {

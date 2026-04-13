@@ -9,6 +9,7 @@ import { callWithRetry } from './utils';
 export type AiProviderConfig =
   | { provider: 'anthropic';    apiKey: string }
   | { provider: 'azure';        apiKey: string; baseUrl: string }
+  | { provider: 'azure-openai'; apiKey: string; baseUrl: string }
   | { provider: 'litellm';      apiKey: string; baseUrl: string }
   | { provider: 'bedrock';      accessKeyId?: string; secretAccessKey?: string; region: string }
   | { provider: 'vertex';       projectId: string; region: string }
@@ -40,51 +41,25 @@ export function normalizeAzureEndpoint(baseUrl: string): string {
 }
 
 /**
- * Adapter that wraps both the Anthropic SDK and the Azure OpenAI SDK behind the
- * common AnthropicLike interface.  It inspects `params.model` on every call and
- * routes accordingly:
- *   - Claude models  → Azure AI Foundry  (Anthropic Messages API format)
- *   - GPT / O-series → Azure OpenAI Service (OpenAI Chat Completions format)
- *
- * The Azure OpenAI baseUrl should be the resource endpoint, e.g.
- *   https://<resource>.openai.azure.com
- * or an APIM gateway URL that routes to Azure OpenAI.
+ * Adapter for Azure OpenAI Service (https://<resource>.openai.azure.com).
+ * Uses the AzureOpenAI SDK which adds the correct api-key header and
+ * api-version query parameter automatically.
  */
-class AzureSmartAdapter {
-  private readonly anthropicClient: Anthropic;
-  private readonly openaiClient: AzureOpenAI;
+class AzureOpenAIAdapter {
+  private readonly client: AzureOpenAI;
 
-  constructor(apiKey: string, baseUrl: string) {
-    // Anthropic-compatible path (Azure AI Foundry / Claude deployments)
-    this.anthropicClient = new Anthropic({
+  constructor(apiKey: string, endpoint: string) {
+    this.client = new AzureOpenAI({
       apiKey,
-      baseURL: baseUrl,
-      defaultHeaders: { 'api-key': apiKey },
-    });
-
-    // OpenAI-compatible path (Azure OpenAI Service / GPT deployments)
-    // Strip trailing /openai if present to avoid double-prefix when AzureOpenAI
-    // constructs the full path: {endpoint}/openai/deployments/{model}/...
-    const endpoint = normalizeAzureEndpoint(baseUrl);
-    this.openaiClient = new AzureOpenAI({
-      apiKey,
-      endpoint,
-      apiVersion: '2024-10-01-preview',
+      endpoint: normalizeAzureEndpoint(endpoint),
+      apiVersion: '2024-10-21', // latest GA version
     });
   }
 
   readonly messages = {
-    create: async (params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message> => {
-      if (isOpenAiModel(params.model)) {
-        return this.callOpenAI(params);
-      }
-      return this.anthropicClient.messages.create(params);
-    },
+    create: (params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message> =>
+      callOpenAICompatible(this.client, params),
   };
-
-  private async callOpenAI(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message> {
-    return callOpenAICompatible(this.openaiClient, params);
-  }
 }
 
 // ── Shared OpenAI-compatible translation ───────────────────────────────────────
@@ -229,9 +204,18 @@ function buildAiClient(config: AiProviderConfig): AnthropicLike {
       return new Anthropic({ apiKey: config.apiKey });
 
     case 'azure':
-      // AzureSmartAdapter routes Claude models to Azure AI Foundry (Anthropic-compatible)
-      // and GPT/O-series models to Azure OpenAI Service (OpenAI-compatible).
-      return new AzureSmartAdapter(config.apiKey, config.baseUrl);
+      // Azure AI Foundry — Anthropic Messages API compatible endpoint.
+      // Endpoint format: https://<resource>.services.ai.azure.com/models
+      return new Anthropic({
+        apiKey: config.apiKey,
+        baseURL: config.baseUrl,
+        defaultHeaders: { 'api-key': config.apiKey },
+      });
+
+    case 'azure-openai':
+      // Azure OpenAI Service — GPT / O-series deployments.
+      // Endpoint format: https://<resource>.openai.azure.com
+      return new AzureOpenAIAdapter(config.apiKey, config.baseUrl);
 
     case 'litellm':
       // LiteLLM proxy implements the Anthropic Messages API.

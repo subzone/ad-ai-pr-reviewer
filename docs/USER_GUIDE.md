@@ -261,7 +261,8 @@ Use `aiProvider` to choose where the model runs.
 | `aiProvider` | Models | Auth inputs needed |
 |---|---|---|
 | `anthropic` (default) | Claude | `aiApiKey` |
-| `azure` | Claude (AI Foundry) or GPT/O-series (OpenAI) | `aiApiKey`, `aiBaseUrl` |
+| `azure` | Claude | `aiApiKey`, `aiBaseUrl` |
+| `azure-openai` | GPT / O-series | `aiApiKey`, `aiBaseUrl` |
 | `litellm` | Any (proxy-routed) | `aiBaseUrl`, `aiApiKey` (optional) |
 | `bedrock` | Claude | `awsRegion` + optionally `awsAccessKeyId` / `awsSecretAccessKey` |
 | `vertex` | Claude | `gcpProjectId`, `gcpRegion`, GCP ADC credentials |
@@ -279,28 +280,26 @@ aiModel: claude-sonnet-4-6
 
 ### Azure AI Foundry
 
-Find your endpoint in **Azure AI Foundry → Project → Deployments → your model → API endpoint**.
+For Claude models hosted on Azure. Find your endpoint in **Azure AI Foundry → Project → Deployments → your model → API endpoint**.
 
 ```yaml
 enableAiReview: true
 aiProvider: azure
 aiApiKey: $(AZURE_AI_API_KEY)
 aiBaseUrl: $(AZURE_AI_ENDPOINT)   # https://<resource>.services.ai.azure.com/models
-aiModel: claude-sonnet-4-6       # deployment name
+aiModel: claude-sonnet-4-6       # your deployment name
 ```
 
 ### Azure OpenAI Service
 
-Find your endpoint and key in **Azure Portal → your OpenAI resource → Keys and Endpoint**.
-
-The model name must match your deployment name in Azure OpenAI Studio. GPT and O-series model names (`gpt-4o`, `o1`, etc.) are automatically detected and routed to Azure OpenAI; Claude model names continue to use Azure AI Foundry.
+For GPT and O-series models hosted on Azure. Find your endpoint and key in **Azure Portal → your OpenAI resource → Keys and Endpoint**.
 
 ```yaml
 enableAiReview: true
-aiProvider: azure
+aiProvider: azure-openai
 aiApiKey: $(AZURE_OPENAI_API_KEY)
 aiBaseUrl: $(AZURE_OPENAI_ENDPOINT)  # https://<resource>.openai.azure.com
-aiModel: gpt-4o                      # must match your deployment name
+aiModel: gpt-4o                      # must match your deployment name exactly
 ```
 
 ### AWS Bedrock
