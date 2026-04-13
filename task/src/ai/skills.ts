@@ -656,6 +656,7 @@ export async function executeSkill(
     max_tokens: maxTokens,
     system: systemPrompt,
     messages: [{ role: 'user', content: userPrompt }],
+    _expectJson: true,  // signals OpenAI-compatible adapters to set response_format: json_object
   };
   
   // Enable reasoning if requested

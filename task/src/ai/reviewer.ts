@@ -166,6 +166,7 @@ async function callOpenAICompatible(
         messages: oaiMessages,
         max_tokens: params.max_tokens,
         ...(oaiTools ? { tools: oaiTools } : {}),
+        ...((params as any)._expectJson ? { response_format: { type: 'json_object' as const } } : {}),
         stream: false,
       })
     );
