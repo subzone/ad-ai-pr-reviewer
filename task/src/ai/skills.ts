@@ -805,7 +805,7 @@ const SkillFindingSchema = z.object({
 
 const SkillResponseSchema = z.object({
   findings: z.array(z.unknown()).optional(),
-  reasoning: z.array(z.string().min(1)).optional(),
+  reasoning: z.array(z.unknown()).optional(),
 }).passthrough();
 
 type ParsedSkillResponse = {
@@ -827,13 +827,22 @@ function validateSkillResponseShape(json: unknown): ParsedSkillResponse | null {
     }
   }
 
-  return { findings, reasoning: parsed.data.reasoning };
+  // Filter reasoning to only include non-empty strings
+  const reasoning: string[] = [];
+  for (const item of parsed.data.reasoning || []) {
+    if (typeof item === 'string' && item.trim().length > 0) {
+      reasoning.push(item);
+    }
+  }
+
+  return { findings, reasoning: reasoning.length > 0 ? reasoning : undefined };
 }
 
 function extractJsonObject(text: string): string | null {
   const trimmed = text.trim();
 
-  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  // Only match ```json fences to avoid false positives from ```diff, ```ts, etc.
+  const fencedMatch = trimmed.match(/```json\s*([\s\S]*?)```/i);
   if (fencedMatch?.[1]) {
     const fenced = fencedMatch[1].trim();
     if (fenced.length > 0) {
@@ -841,6 +850,7 @@ function extractJsonObject(text: string): string | null {
     }
   }
 
+  // Fall back to brace-based extraction
   const firstBrace = trimmed.indexOf('{');
   const lastBrace = trimmed.lastIndexOf('}');
   if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
@@ -881,7 +891,7 @@ export function parseSkillResponse(text: string, file: string, skill: ReviewSkil
     try {
       const parsedJson = JSON.parse(candidate);
       return validateSkillResponseShape(parsedJson);
-    } catch {
+    } catch (err) {
       return null;
     }
   };
@@ -901,7 +911,13 @@ export function parseSkillResponse(text: string, file: string, skill: ReviewSkil
     }
   }
 
-  console.warn(`Failed to parse skill ${skill.name} response`);
+  // Log parse failure with error details for debugging
+  try {
+    JSON.parse(jsonString);
+    console.warn(`Failed to parse skill ${skill.name} response: schema validation failed`);
+  } catch (err) {
+    console.warn(`Failed to parse skill ${skill.name} response:`, err);
+  }
   return { findings: [] };
 }
 

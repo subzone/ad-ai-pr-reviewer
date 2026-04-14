@@ -249,4 +249,59 @@ describe('parseSkillResponse', () => {
       diffLines: '+line',
     });
   });
+
+  it('falls back to brace extraction when non-json fence is present', () => {
+    const text = `
+      Here's a diff fence before the JSON:
+      \`\`\`diff
+      - old code
+      + new code
+      \`\`\`
+
+      And here's the JSON:
+      {
+        "findings": [{
+          "severity": "high",
+          "title": "Security Issue",
+          "description": "This is important"
+        }]
+      }
+    `;
+
+    const result = parseSkillResponse(text, 'test.ts', skill);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toMatchObject({
+      severity: 'high',
+      title: 'Security Issue',
+      description: 'This is important',
+    });
+  });
+
+  it('preserves valid findings even when reasoning contains invalid values', () => {
+    const text = JSON.stringify({
+      findings: [
+        { severity: 'critical', title: 'Critical bug', description: 'desc' },
+      ],
+      reasoning: ['Valid reasoning', '', 123, null, 'Another valid one'],
+    });
+
+    const result = parseSkillResponse(text, 'app.ts', skill);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0].severity).toBe('critical');
+    // Should filter reasoning to only valid non-empty strings
+    expect(result.reasoning).toEqual(['Valid reasoning', 'Another valid one']);
+  });
+
+  it('returns undefined reasoning when all reasoning values are invalid', () => {
+    const text = JSON.stringify({
+      findings: [
+        { severity: 'low', title: 'Minor issue', description: 'desc' },
+      ],
+      reasoning: ['', '   ', 123, null],
+    });
+
+    const result = parseSkillResponse(text, 'app.ts', skill);
+    expect(result.findings).toHaveLength(1);
+    expect(result.reasoning).toBeUndefined();
+  });
 });
