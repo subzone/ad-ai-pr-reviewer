@@ -316,10 +316,19 @@ function buildAiProviderConfig() {
             const apiKey = tl.getInput('aiApiKey', false) ?? '';
             const baseUrl = tl.getInput('aiBaseUrl', false) ?? '';
             if (!apiKey)
-                throw new Error('aiApiKey is required when using Azure (Azure OpenAI or Azure AI Foundry).');
+                throw new Error('aiApiKey is required when using Azure AI Foundry.');
             if (!baseUrl)
-                throw new Error('aiBaseUrl is required when using Azure. For Azure OpenAI use your resource endpoint (e.g. https://<resource>.openai.azure.com). For Azure AI Foundry use the models endpoint (e.g. https://<resource>.services.ai.azure.com/models).');
+                throw new Error('aiBaseUrl is required when using Azure AI Foundry. Use your models endpoint, e.g. https://<resource>.services.ai.azure.com/models.');
             return { provider: 'azure', apiKey, baseUrl };
+        }
+        case 'azure-openai': {
+            const apiKey = tl.getInput('aiApiKey', false) ?? '';
+            const baseUrl = tl.getInput('aiBaseUrl', false) ?? '';
+            if (!apiKey)
+                throw new Error('aiApiKey is required when using Azure OpenAI Service.');
+            if (!baseUrl)
+                throw new Error('aiBaseUrl is required when using Azure OpenAI Service. Use your resource endpoint, e.g. https://<resource>.openai.azure.com.');
+            return { provider: 'azure-openai', apiKey, baseUrl };
         }
         case 'litellm': {
             const apiKey = tl.getInput('aiApiKey', false) ?? '';
@@ -347,6 +356,18 @@ function buildAiProviderConfig() {
             if (!region)
                 throw new Error('gcpRegion is required when using Google Vertex AI (e.g. us-east5).');
             return { provider: 'vertex', projectId, region };
+        }
+        case 'googleai': {
+            const apiKey = tl.getInput('aiApiKey', false) ?? '';
+            if (!apiKey)
+                throw new Error('aiApiKey is required when using Google AI Studio. Get your API key from https://aistudio.google.com/apikey.');
+            return { provider: 'googleai', apiKey };
+        }
+        case 'githubmodels': {
+            const apiKey = tl.getInput('aiApiKey', false) ?? '';
+            if (!apiKey)
+                throw new Error('aiApiKey is required when using GitHub Models. Use a GitHub Personal Access Token with the models:read permission.');
+            return { provider: 'githubmodels', apiKey };
         }
         default:
             throw new Error(`Unknown AI provider: ${aiProvider}`);

@@ -6,6 +6,8 @@ exports.getSkillById = getSkillById;
 exports.listAvailableSkills = listAvailableSkills;
 exports.parseSkillIds = parseSkillIds;
 exports.executeSkill = executeSkill;
+exports.normalizeSeverity = normalizeSeverity;
+exports.isDiffLinesAllComments = isDiffLinesAllComments;
 exports.recoverTruncatedFindingsJson = recoverTruncatedFindingsJson;
 exports.executeSkillsParallel = executeSkillsParallel;
 exports.mergeSkillResults = mergeSkillResults;
@@ -503,8 +505,7 @@ function parseSkillIds(skillsInput) {
 /**
  * Execute a skill review on a single file
  */
-async function executeSkill(skill, file, diff, client, // AnthropicLike
-options) {
+async function executeSkill(skill, file, diff, client, options) {
     const startTime = Date.now();
     // Build skill-specific prompt
     const systemPrompt = skill.systemPrompt;
@@ -515,6 +516,7 @@ options) {
         max_tokens: maxTokens,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
+        _expectJson: true, // signals OpenAI-compatible adapters to set response_format: json_object
     };
     // Enable reasoning if requested
     if (options.enableReasoning) {
@@ -594,6 +596,7 @@ function buildSkillUserPrompt(skill, file, diff, options) {
     lines.push(diff);
     lines.push(`\`\`\``);
     lines.push(`\nAnalyze the above diff for ${skill.focus.toLowerCase()}.`);
+    lines.push(`IMPORTANT: Do NOT report findings on lines that are purely comments (lines starting with //, #, /*, *, or <!-- after the diff prefix). Comments are not executable code.`);
     lines.push(`Return JSON: {"findings": [{"severity": "...", "category": "...", "title": "...", "description": "...", "file": "${file}", "diffLines": "...", "suggestion": "..."}]}`);
     return lines.join('\n');
 }
@@ -610,6 +613,18 @@ function extractTextFromMessage(message) {
     return '';
 }
 /**
+ * Normalize and validate a severity string from model output.
+ * Trims whitespace, converts to lowercase, and validates against allowed severities.
+ * Returns 'info' if the severity is invalid.
+ */
+function normalizeSeverity(severity) {
+    const normalizedSeverity = (severity || 'info').trim().toLowerCase();
+    const validSeverities = ['critical', 'high', 'medium', 'low', 'info'];
+    return validSeverities.includes(normalizedSeverity)
+        ? normalizedSeverity
+        : 'info';
+}
+/**
  * Parse skill response
  */
 function parseSkillResponse(text, file, skill) {
@@ -621,7 +636,7 @@ function parseSkillResponse(text, file, skill) {
     }
     const mapFindings = (parsed) => {
         const findings = (parsed.findings || []).map((f) => ({
-            severity: f.severity || 'info',
+            severity: normalizeSeverity(f.severity),
             category: f.category || skill.categories[0],
             title: f.title || 'Untitled',
             description: f.description || '',
@@ -651,6 +666,26 @@ function parseSkillResponse(text, file, skill) {
         console.warn(`Failed to parse skill ${skill.name} response:`, err);
         return { findings: [] };
     }
+}
+/**
+ * Returns true if every non-empty line in a diffLines citation is a comment
+ * (i.e. the finding is about commented-out code, not live code).
+ */
+function isDiffLinesAllComments(diffLines) {
+    const nonEmpty = diffLines.split('\n').filter(l => l.trim().length > 0);
+    if (nonEmpty.length === 0)
+        return false;
+    return nonEmpty.every(line => {
+        const code = line.replace(/^[+\- ]/, '').trimStart();
+        return (code.startsWith('//') ||
+            code.startsWith('#') ||
+            code.startsWith('/*') ||
+            code.startsWith('*/') ||
+            code.startsWith('* ') ||
+            code === '*' ||
+            code.startsWith('<!--') ||
+            code.endsWith('-->'));
+    });
 }
 /**
  * Attempt to recover a truncated JSON findings object by closing it at the last complete item.
@@ -704,6 +739,11 @@ function validateSkillFindings(findings, diff, skill) {
         if (!finding.title || finding.title.length < 10) {
             shouldFilter = true;
             filterReason = 'invalid title';
+        }
+        // Check 5: Skip findings whose cited lines are all comments (not executable code)
+        if (!shouldFilter && finding.diffLines && isDiffLinesAllComments(finding.diffLines)) {
+            shouldFilter = true;
+            filterReason = 'commented-out code';
         }
         if (shouldFilter) {
             console.log(`  [${skill.name}] Filtered: ${finding.title} (${filterReason})`);

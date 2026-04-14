@@ -1,4 +1,60 @@
-import { recoverTruncatedFindingsJson, isDiffLinesAllComments } from '../../ai/skills';
+import { recoverTruncatedFindingsJson, isDiffLinesAllComments, normalizeSeverity } from '../../ai/skills';
+
+describe('normalizeSeverity', () => {
+  it('accepts valid lowercase severities', () => {
+    expect(normalizeSeverity('critical')).toBe('critical');
+    expect(normalizeSeverity('high')).toBe('high');
+    expect(normalizeSeverity('medium')).toBe('medium');
+    expect(normalizeSeverity('low')).toBe('low');
+    expect(normalizeSeverity('info')).toBe('info');
+  });
+
+  it('normalizes uppercase severities to lowercase', () => {
+    expect(normalizeSeverity('CRITICAL')).toBe('critical');
+    expect(normalizeSeverity('HIGH')).toBe('high');
+    expect(normalizeSeverity('MEDIUM')).toBe('medium');
+    expect(normalizeSeverity('LOW')).toBe('low');
+    expect(normalizeSeverity('INFO')).toBe('info');
+  });
+
+  it('normalizes mixed-case severities to lowercase', () => {
+    expect(normalizeSeverity('Critical')).toBe('critical');
+    expect(normalizeSeverity('High')).toBe('high');
+    expect(normalizeSeverity('Medium')).toBe('medium');
+    expect(normalizeSeverity('Low')).toBe('low');
+    expect(normalizeSeverity('Info')).toBe('info');
+  });
+
+  it('trims whitespace from severities', () => {
+    expect(normalizeSeverity(' critical ')).toBe('critical');
+    expect(normalizeSeverity('\thigh\t')).toBe('high');
+    expect(normalizeSeverity('\n medium \n')).toBe('medium');
+    expect(normalizeSeverity('  low  ')).toBe('low');
+  });
+
+  it('handles combined whitespace and case normalization', () => {
+    expect(normalizeSeverity(' CRITICAL ')).toBe('critical');
+    expect(normalizeSeverity('  High  ')).toBe('high');
+    expect(normalizeSeverity('\tMEDIUM\t')).toBe('medium');
+  });
+
+  it('returns "info" for invalid severities', () => {
+    expect(normalizeSeverity('invalid')).toBe('info');
+    expect(normalizeSeverity('warning')).toBe('info');
+    expect(normalizeSeverity('error')).toBe('info');
+    expect(normalizeSeverity('severe')).toBe('info');
+    expect(normalizeSeverity('')).toBe('info');
+  });
+
+  it('returns "info" for undefined', () => {
+    expect(normalizeSeverity(undefined)).toBe('info');
+  });
+
+  it('returns "info" for whitespace-only strings', () => {
+    expect(normalizeSeverity('   ')).toBe('info');
+    expect(normalizeSeverity('\t\n')).toBe('info');
+  });
+});
 
 describe('recoverTruncatedFindingsJson', () => {
   it('returns null for an empty string', () => {
