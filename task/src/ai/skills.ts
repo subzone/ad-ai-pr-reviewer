@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { z } from 'zod';
 import { callWithRetry } from './utils';
 import { AnthropicLike } from './reviewer';
 
@@ -792,38 +793,78 @@ export function normalizeSeverity(severity: string | undefined): SkillFinding['s
     : 'info';
 }
 
-/**
- * Interface for parsed JSON response from skills
- */
-interface ParsedSkillResponse {
-  findings?: Array<{
-    severity?: string;
-    category?: string;
-    title?: string;
-    description?: string;
-    diffLines?: string;
-    suggestion?: string;
-    confidence?: number;
-  }>;
+const SkillFindingSchema = z.object({
+  severity: z.string().optional(),
+  category: z.string().optional(),
+  title: z.string().optional(),
+  description: z.string().optional(),
+  diffLines: z.string().optional(),
+  suggestion: z.string().optional(),
+  confidence: z.number().optional(),
+}).passthrough();
+
+const SkillResponseSchema = z.object({
+  findings: z.array(z.unknown()).optional(),
+  reasoning: z.array(z.string().min(1)).optional(),
+}).passthrough();
+
+type ParsedSkillResponse = {
+  findings: z.infer<typeof SkillFindingSchema>[];
   reasoning?: string[];
+};
+
+function validateSkillResponseShape(json: unknown): ParsedSkillResponse | null {
+  const parsed = SkillResponseSchema.safeParse(json);
+  if (!parsed.success) {
+    return null;
+  }
+
+  const findings: z.infer<typeof SkillFindingSchema>[] = [];
+  for (const candidate of parsed.data.findings || []) {
+    const validated = SkillFindingSchema.safeParse(candidate);
+    if (validated.success) {
+      findings.push(validated.data);
+    }
+  }
+
+  return { findings, reasoning: parsed.data.reasoning };
+}
+
+function extractJsonObject(text: string): string | null {
+  const trimmed = text.trim();
+
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fencedMatch?.[1]) {
+    const fenced = fencedMatch[1].trim();
+    if (fenced.length > 0) {
+      return fenced;
+    }
+  }
+
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    return trimmed.slice(firstBrace, lastBrace + 1);
+  }
+
+  return null;
 }
 
 /**
  * Parse skill response
  */
-function parseSkillResponse(text: string, file: string, skill: ReviewSkill): {
+export function parseSkillResponse(text: string, file: string, skill: ReviewSkill): {
   findings: SkillFinding[];
   reasoning?: string[];
 } {
-  // Try to extract JSON
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
+  const jsonString = extractJsonObject(text);
+  if (!jsonString) {
     console.warn(`Skill ${skill.name} returned non-JSON response`);
     return { findings: [] };
   }
 
   const mapFindings = (parsed: ParsedSkillResponse): { findings: SkillFinding[]; reasoning?: string[] } => {
-    const findings: SkillFinding[] = (parsed.findings || []).map((f) => ({
+    const findings: SkillFinding[] = parsed.findings.map((f) => ({
       severity: normalizeSeverity(f.severity),
       category: f.category || skill.categories[0],
       title: f.title || 'Untitled',
@@ -836,23 +877,32 @@ function parseSkillResponse(text: string, file: string, skill: ReviewSkill): {
     return { findings, reasoning: parsed.reasoning };
   };
 
-  try {
-    return mapFindings(JSON.parse(jsonMatch[0]));
-  } catch (err) {
-    // Response may be truncated — try to recover by closing at the last complete finding object
-    const recovered = recoverTruncatedFindingsJson(jsonMatch[0]);
-    if (recovered !== null) {
-      try {
-        const result = mapFindings(JSON.parse(recovered));
-        console.warn(`Skill ${skill.name} response was truncated — recovered ${result.findings.length} finding(s)`);
-        return result;
-      } catch {
-        // recovery parse also failed — fall through
-      }
+  const parseWithSchema = (candidate: string): ParsedSkillResponse | null => {
+    try {
+      const parsedJson = JSON.parse(candidate);
+      return validateSkillResponseShape(parsedJson);
+    } catch {
+      return null;
     }
-    console.warn(`Failed to parse skill ${skill.name} response:`, err);
-    return { findings: [] };
+  };
+
+  const parsed = parseWithSchema(jsonString);
+  if (parsed) {
+    return mapFindings(parsed);
   }
+
+  const recovered = recoverTruncatedFindingsJson(jsonString);
+  if (recovered !== null) {
+    const recoveredResult = parseWithSchema(recovered);
+    if (recoveredResult) {
+      const result = mapFindings(recoveredResult);
+      console.warn(`Skill ${skill.name} response was truncated — recovered ${result.findings.length} finding(s)`);
+      return result;
+    }
+  }
+
+  console.warn(`Failed to parse skill ${skill.name} response`);
+  return { findings: [] };
 }
 
 /**

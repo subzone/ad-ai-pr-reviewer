@@ -1,4 +1,4 @@
-import { recoverTruncatedFindingsJson, isDiffLinesAllComments, normalizeSeverity } from '../../ai/skills';
+import { parseSkillResponse, recoverTruncatedFindingsJson, isDiffLinesAllComments, normalizeSeverity, ReviewSkill } from '../../ai/skills';
 
 describe('normalizeSeverity', () => {
   it('accepts valid lowercase severities', () => {
@@ -169,5 +169,84 @@ describe('isDiffLinesAllComments', () => {
 
   it('strips diff prefix before checking (context lines with space)', () => {
     expect(isDiffLinesAllComments(' // context comment')).toBe(true);
+  });
+});
+
+describe('parseSkillResponse', () => {
+  const skill: ReviewSkill = {
+    id: 'test-skill',
+    name: 'Test Skill',
+    version: '1.0.0',
+    certificationLevel: 'stable',
+    systemPrompt: 'Test system prompt',
+    focus: 'Quality',
+    categories: ['quality'],
+    antiHallucinationRules: [],
+    requiredCitations: false,
+  };
+
+  it('parses JSON inside code fences and normalizes severities', () => {
+    const text = `
+      some preface text
+      \`\`\`json
+      {
+        "findings": [{
+          "severity": "HIGH",
+          "category": "security",
+          "title": "SQL Injection",
+          "description": "Parameter not sanitized",
+          "diffLines": "+execute(query)"
+        }],
+        "reasoning": ["Identified vulnerable query construction"]
+      }
+      \`\`\`
+    `;
+
+    const result = parseSkillResponse(text, 'db.ts', skill);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toMatchObject({
+      severity: 'high',
+      category: 'security',
+      title: 'SQL Injection',
+      description: 'Parameter not sanitized',
+      file: 'db.ts',
+      diffLines: '+execute(query)',
+    });
+    expect(result.reasoning).toEqual(['Identified vulnerable query construction']);
+  });
+
+  it('drops findings that fail schema validation while keeping valid ones', () => {
+    const text = JSON.stringify({
+      findings: [
+        { severity: 123, title: 'Invalid type' },
+        { severity: 'low', title: 'Valid finding', description: 'desc', diffLines: '+line' },
+        'not-an-object',
+      ],
+    });
+
+    const result = parseSkillResponse(text, 'app.ts', skill);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toMatchObject({
+      severity: 'low',
+      category: 'quality',
+      title: 'Valid finding',
+      description: 'desc',
+      file: 'app.ts',
+      diffLines: '+line',
+    });
+  });
+
+  it('attempts to recover truncated responses before validation', () => {
+    const truncated = '{"findings":[{"severity":"medium","title":"Partial finding","description":"desc","diffLines":"+line"}';
+
+    const result = parseSkillResponse(truncated, 'server.ts', skill);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toMatchObject({
+      severity: 'medium',
+      title: 'Partial finding',
+      description: 'desc',
+      file: 'server.ts',
+      diffLines: '+line',
+    });
   });
 });
