@@ -813,10 +813,15 @@ type ParsedSkillResponse = {
   reasoning?: string[];
 };
 
-function validateSkillResponseShape(json: unknown): ParsedSkillResponse | null {
+type ValidationResult = {
+  result: ParsedSkillResponse | null;
+  error?: unknown;
+};
+
+function validateSkillResponseShape(json: unknown): ValidationResult {
   const parsed = SkillResponseSchema.safeParse(json);
   if (!parsed.success) {
-    return null;
+    return { result: null, error: parsed.error };
   }
 
   const findings: z.infer<typeof SkillFindingSchema>[] = [];
@@ -835,7 +840,7 @@ function validateSkillResponseShape(json: unknown): ParsedSkillResponse | null {
     }
   }
 
-  return { findings, reasoning: reasoning.length > 0 ? reasoning : undefined };
+  return { result: { findings, reasoning: reasoning.length > 0 ? reasoning : undefined } };
 }
 
 function extractJsonObject(text: string): string | null {
@@ -887,36 +892,37 @@ export function parseSkillResponse(text: string, file: string, skill: ReviewSkil
     return { findings, reasoning: parsed.reasoning };
   };
 
-  const parseWithSchema = (candidate: string): ParsedSkillResponse | null => {
+  const parseWithSchema = (candidate: string): ValidationResult => {
     try {
       const parsedJson = JSON.parse(candidate);
       return validateSkillResponseShape(parsedJson);
     } catch (err) {
-      return null;
+      return { result: null, error: err };
     }
   };
 
   const parsed = parseWithSchema(jsonString);
-  if (parsed) {
-    return mapFindings(parsed);
+  if (parsed.result) {
+    return mapFindings(parsed.result);
   }
 
+  let recoveredResult: ValidationResult | undefined;
   const recovered = recoverTruncatedFindingsJson(jsonString);
   if (recovered !== null) {
-    const recoveredResult = parseWithSchema(recovered);
-    if (recoveredResult) {
-      const result = mapFindings(recoveredResult);
+    recoveredResult = parseWithSchema(recovered);
+    if (recoveredResult.result) {
+      const result = mapFindings(recoveredResult.result);
       console.warn(`Skill ${skill.name} response was truncated — recovered ${result.findings.length} finding(s)`);
       return result;
     }
   }
 
   // Log parse failure with error details for debugging
-  try {
-    JSON.parse(jsonString);
+  const errorToLog = recoveredResult?.error ?? parsed.error;
+  if (errorToLog) {
+    console.warn(`Failed to parse skill ${skill.name} response:`, errorToLog);
+  } else {
     console.warn(`Failed to parse skill ${skill.name} response: schema validation failed`);
-  } catch (err) {
-    console.warn(`Failed to parse skill ${skill.name} response:`, err);
   }
   return { findings: [] };
 }
