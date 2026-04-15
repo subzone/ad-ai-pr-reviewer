@@ -17,7 +17,8 @@
     "@octokit/rest": "^21.0.2",
     "axios": "^1.7.9",
     "azure-pipelines-task-lib": "^4.16.0",
-    "openai": "^6.34.0"
+    "openai": "^6.34.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",

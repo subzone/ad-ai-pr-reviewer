@@ -7,10 +7,12 @@ exports.listAvailableSkills = listAvailableSkills;
 exports.parseSkillIds = parseSkillIds;
 exports.executeSkill = executeSkill;
 exports.normalizeSeverity = normalizeSeverity;
+exports.parseSkillResponse = parseSkillResponse;
 exports.isDiffLinesAllComments = isDiffLinesAllComments;
 exports.recoverTruncatedFindingsJson = recoverTruncatedFindingsJson;
 exports.executeSkillsParallel = executeSkillsParallel;
 exports.mergeSkillResults = mergeSkillResults;
+const zod_1 = require("zod");
 const utils_1 = require("./utils");
 // ── Built-in Skills ────────────────────────────────────────────────────────────
 exports.BUILTIN_SKILLS = {
@@ -624,18 +626,69 @@ function normalizeSeverity(severity) {
         ? normalizedSeverity
         : 'info';
 }
+const SkillFindingSchema = zod_1.z.object({
+    severity: zod_1.z.string().optional(),
+    category: zod_1.z.string().optional(),
+    title: zod_1.z.string().optional(),
+    description: zod_1.z.string().optional(),
+    diffLines: zod_1.z.string().optional(),
+    suggestion: zod_1.z.string().optional(),
+    confidence: zod_1.z.number().optional(),
+}).passthrough();
+const SkillResponseSchema = zod_1.z.object({
+    findings: zod_1.z.array(zod_1.z.unknown()).optional(),
+    reasoning: zod_1.z.array(zod_1.z.unknown()).optional(),
+}).passthrough();
+function validateSkillResponseShape(json) {
+    const parsed = SkillResponseSchema.safeParse(json);
+    if (!parsed.success) {
+        return { result: null, error: parsed.error };
+    }
+    const findings = [];
+    for (const candidate of parsed.data.findings || []) {
+        const validated = SkillFindingSchema.safeParse(candidate);
+        if (validated.success) {
+            findings.push(validated.data);
+        }
+    }
+    // Filter reasoning to only include non-empty strings
+    const reasoning = [];
+    for (const item of parsed.data.reasoning || []) {
+        if (typeof item === 'string' && item.trim().length > 0) {
+            reasoning.push(item);
+        }
+    }
+    return { result: { findings, reasoning: reasoning.length > 0 ? reasoning : undefined } };
+}
+function extractJsonObject(text) {
+    const trimmed = text.trim();
+    // Only match ```json fences to avoid false positives from ```diff, ```ts, etc.
+    const fencedMatch = trimmed.match(/```json\s*([\s\S]*?)```/i);
+    if (fencedMatch?.[1]) {
+        const fenced = fencedMatch[1].trim();
+        if (fenced.length > 0) {
+            return fenced;
+        }
+    }
+    // Fall back to brace-based extraction
+    const firstBrace = trimmed.indexOf('{');
+    const lastBrace = trimmed.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        return trimmed.slice(firstBrace, lastBrace + 1);
+    }
+    return null;
+}
 /**
  * Parse skill response
  */
 function parseSkillResponse(text, file, skill) {
-    // Try to extract JSON
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
+    const jsonString = extractJsonObject(text);
+    if (!jsonString) {
         console.warn(`Skill ${skill.name} returned non-JSON response`);
         return { findings: [] };
     }
     const mapFindings = (parsed) => {
-        const findings = (parsed.findings || []).map((f) => ({
+        const findings = parsed.findings.map((f) => ({
             severity: normalizeSeverity(f.severity),
             category: f.category || skill.categories[0],
             title: f.title || 'Untitled',
@@ -647,25 +700,38 @@ function parseSkillResponse(text, file, skill) {
         }));
         return { findings, reasoning: parsed.reasoning };
     };
-    try {
-        return mapFindings(JSON.parse(jsonMatch[0]));
-    }
-    catch (err) {
-        // Response may be truncated — try to recover by closing at the last complete finding object
-        const recovered = recoverTruncatedFindingsJson(jsonMatch[0]);
-        if (recovered !== null) {
-            try {
-                const result = mapFindings(JSON.parse(recovered));
-                console.warn(`Skill ${skill.name} response was truncated — recovered ${result.findings.length} finding(s)`);
-                return result;
-            }
-            catch {
-                // recovery parse also failed — fall through
-            }
+    const parseWithSchema = (candidate) => {
+        try {
+            const parsedJson = JSON.parse(candidate);
+            return validateSkillResponseShape(parsedJson);
         }
-        console.warn(`Failed to parse skill ${skill.name} response:`, err);
-        return { findings: [] };
+        catch (err) {
+            return { result: null, error: err };
+        }
+    };
+    const parsed = parseWithSchema(jsonString);
+    if (parsed.result) {
+        return mapFindings(parsed.result);
     }
+    let recoveredResult;
+    const recovered = recoverTruncatedFindingsJson(jsonString);
+    if (recovered !== null) {
+        recoveredResult = parseWithSchema(recovered);
+        if (recoveredResult.result) {
+            const result = mapFindings(recoveredResult.result);
+            console.warn(`Skill ${skill.name} response was truncated — recovered ${result.findings.length} finding(s)`);
+            return result;
+        }
+    }
+    // Log parse failure with error details for debugging
+    const errorToLog = recoveredResult?.error ?? parsed.error;
+    if (errorToLog) {
+        console.warn(`Failed to parse skill ${skill.name} response:`, errorToLog);
+    }
+    else {
+        console.warn(`Failed to parse skill ${skill.name} response: schema validation failed`);
+    }
+    return { findings: [] };
 }
 /**
  * Returns true if every non-empty line in a diffLines citation is a comment
