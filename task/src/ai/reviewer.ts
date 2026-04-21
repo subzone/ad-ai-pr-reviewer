@@ -460,7 +460,8 @@ async function executeTool(
   const fs = await import('fs/promises');
   const path = await import('path');
   const util = await import('util');
-  const exec = util.promisify((await import('child_process')).exec);
+  const { exec, execFile: execFileCallback } = await import('child_process');
+  const execFile = util.promisify(execFileCallback);
 
   try {
     switch (toolName) {
@@ -530,27 +531,48 @@ async function executeTool(
 
       case 'search_codebase': {
         const input = toolInput as { pattern: string; file_pattern?: string };
-        
+
         try {
-          // Use grep for fast searching
+          // Use grep for fast searching with execFile to prevent command injection
           // -r = recursive, -n = line numbers, -I = skip binary files
-          const grepCmd = input.file_pattern
-            ? `cd "${repositoryPath}" && grep -rn --include="${input.file_pattern}" "${input.pattern.replace(/"/g, '\\"')}" . || true`
-            : `cd "${repositoryPath}" && grep -rn -I "${input.pattern.replace(/"/g, '\\"')}" . || true`;
-          
-          const { stdout } = await exec(grepCmd, { maxBuffer: 1024 * 1024 }); // 1MB limit
-          
+          const grepArgs = ['-rn', '-I'];
+
+          // Add file pattern filter if specified
+          if (input.file_pattern) {
+            grepArgs.push(`--include=${input.file_pattern}`);
+          }
+
+          // Add the search pattern and search directory
+          grepArgs.push(input.pattern, '.');
+
+          // Execute grep using execFile (safe from command injection)
+          let stdout: string;
+          try {
+            const result = await execFile('grep', grepArgs, {
+              cwd: repositoryPath,
+              maxBuffer: 1024 * 1024, // 1MB limit
+            });
+            stdout = result.stdout;
+          } catch (err: any) {
+            // grep exits with code 1 when no matches found, which is normal
+            if (err.code === 1) {
+              return `No matches found for pattern: ${input.pattern}`;
+            }
+            // Other errors are genuine failures
+            throw err;
+          }
+
           if (!stdout.trim()) {
             return `No matches found for pattern: ${input.pattern}`;
           }
-          
+
           // Limit results to prevent token overflow
           const lines = stdout.trim().split('\n');
           if (lines.length > 50) {
             const truncated = lines.slice(0, 50).join('\n');
             return `Found ${lines.length} matches (showing first 50):\n${truncated}`;
           }
-          
+
           return `Found ${lines.length} matches:\n${stdout.trim()}`;
         } catch (err) {
           return `Error searching codebase: ${err instanceof Error ? err.message : String(err)}`;
