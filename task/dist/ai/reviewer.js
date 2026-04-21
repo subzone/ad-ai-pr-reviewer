@@ -339,7 +339,8 @@ async function executeTool(toolName, toolInput, repositoryPath) {
     const fs = await Promise.resolve().then(() => __importStar(require('fs/promises')));
     const path = await Promise.resolve().then(() => __importStar(require('path')));
     const util = await Promise.resolve().then(() => __importStar(require('util')));
-    const exec = util.promisify((await Promise.resolve().then(() => __importStar(require('child_process')))).exec);
+    const { exec, execFile: execFileCallback } = await Promise.resolve().then(() => __importStar(require('child_process')));
+    const execFile = util.promisify(execFileCallback);
     try {
         switch (toolName) {
             case 'read_full_file': {
@@ -398,12 +399,32 @@ async function executeTool(toolName, toolInput, repositoryPath) {
             case 'search_codebase': {
                 const input = toolInput;
                 try {
-                    // Use grep for fast searching
+                    // Use grep for fast searching with execFile to prevent command injection
                     // -r = recursive, -n = line numbers, -I = skip binary files
-                    const grepCmd = input.file_pattern
-                        ? `cd "${repositoryPath}" && grep -rn --include="${input.file_pattern}" "${input.pattern.replace(/"/g, '\\"')}" . || true`
-                        : `cd "${repositoryPath}" && grep -rn -I "${input.pattern.replace(/"/g, '\\"')}" . || true`;
-                    const { stdout } = await exec(grepCmd, { maxBuffer: 1024 * 1024 }); // 1MB limit
+                    const grepArgs = ['-rn', '-I'];
+                    // Add file pattern filter if specified
+                    if (input.file_pattern) {
+                        grepArgs.push(`--include=${input.file_pattern}`);
+                    }
+                    // Add the search pattern and search directory
+                    grepArgs.push(input.pattern, '.');
+                    // Execute grep using execFile (safe from command injection)
+                    let stdout;
+                    try {
+                        const result = await execFile('grep', grepArgs, {
+                            cwd: repositoryPath,
+                            maxBuffer: 1024 * 1024, // 1MB limit
+                        });
+                        stdout = result.stdout;
+                    }
+                    catch (err) {
+                        // grep exits with code 1 when no matches found, which is normal
+                        if (err.code === 1) {
+                            return `No matches found for pattern: ${input.pattern}`;
+                        }
+                        // Other errors are genuine failures
+                        throw err;
+                    }
                     if (!stdout.trim()) {
                         return `No matches found for pattern: ${input.pattern}`;
                     }
